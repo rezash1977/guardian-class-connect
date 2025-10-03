@@ -64,10 +64,23 @@ const StudentsManagement = () => {
   };
 
   const fetchParents = async () => {
+    // Fetch users with parent role from user_roles, then load their profiles
+    const { data: roleRows } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('role', 'parent');
+
+    const parentIds = (roleRows as any[] | null)?.map((r: any) => r.user_id) || [];
+    if (parentIds.length === 0) {
+      setParents([]);
+      return;
+    }
+
     const { data } = await supabase
       .from('profiles')
       .select('id, full_name, username')
-      .eq('role', 'parent');
+      .in('id', parentIds);
+
     setParents(data || []);
   };
 
@@ -86,12 +99,17 @@ const StudentsManagement = () => {
         .from('profiles')
         .insert({
           id: authData.user!.id,
-          role: 'parent',
           full_name: parentFullName,
           username: parentUsername,
         });
 
       if (profileError) throw profileError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({ user_id: authData.user!.id, role: 'parent' });
+
+      if (roleError) throw roleError;
 
       toast.success('ولی با موفقیت اضافه شد');
       setParentOpen(false);

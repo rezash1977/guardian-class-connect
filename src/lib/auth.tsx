@@ -37,12 +37,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         if (session?.user) {
           setTimeout(async () => {
-            const { data } = await supabase
-              .from('profiles')
+            const { data: roleRow } = await supabase
+              .from('user_roles')
               .select('role')
-              .eq('id', session.user.id)
-              .single();
-            setUserRole(data?.role ?? null);
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+            setUserRole(roleRow?.role ?? null);
             setLoading(false);
           }, 0);
         } else {
@@ -59,10 +59,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       if (session?.user) {
         supabase
-          .from('profiles')
+          .from('user_roles')
           .select('role')
-          .eq('id', session.user.id)
-          .single()
+          .eq('user_id', session.user.id)
+          .maybeSingle()
           .then(({ data }) => {
             setUserRole(data?.role ?? null);
             setLoading(false);

@@ -62,12 +62,18 @@ const TeachersManagement = () => {
         .from('profiles')
         .insert({
           id: authData.user!.id,
-          role: 'teacher',
           full_name: fullName,
           username,
         });
 
       if (profileError) throw profileError;
+
+      // Assign teacher role
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({ user_id: authData.user!.id, role: 'teacher' });
+
+      if (roleError) throw roleError;
 
       // Create teacher record
       const { error: teacherError } = await supabase
