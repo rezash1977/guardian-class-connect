@@ -22,31 +22,22 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Get user by username
+      // Get user email by username
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('id')
+        .select('email')
         .eq('username', username)
-        .single();
+        .maybeSingle();
 
-      if (profileError || !profile) {
+      if (profileError || !profile?.email) {
         toast.error('نام کاربری یا رمز عبور اشتباه است');
-        setLoading(false);
-        return;
-      }
-
-      // Get user email from auth.users
-      const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(profile.id);
-      
-      if (userError || !user?.email) {
-        toast.error('خطا در ورود');
         setLoading(false);
         return;
       }
 
       // Sign in with email and password
       const { error } = await supabase.auth.signInWithPassword({
-        email: user.email,
+        email: profile.email,
         password,
       });
 
@@ -108,6 +99,7 @@ const Login = () => {
             id: authData.user.id,
             full_name: fullName,
             username: username,
+            email: email,
           });
 
         if (profileError) {
