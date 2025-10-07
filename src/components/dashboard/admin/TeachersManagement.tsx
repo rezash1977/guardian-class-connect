@@ -52,47 +52,67 @@ const TeachersManagement = () => {
     e.preventDefault();
     
     try {
+      const email = `${username}@school.local`;
+      
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: `${username}@school.local`,
+        email,
         password,
       });
 
       if (authError) throw authError;
+      
+      if (!authData.user) {
+        throw new Error('کاربر ایجاد نشد');
+      }
+
+      // Wait a bit for auth user to be created
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create profile
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
-          id: authData.user!.id,
+          id: authData.user.id,
           full_name: fullName,
           username,
+          email,
         });
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('Profile error:', profileError);
+        throw profileError;
+      }
 
       // Assign teacher role
       const { error: roleError } = await supabase
         .from('user_roles')
-        .insert({ user_id: authData.user!.id, role: 'teacher' });
+        .insert({ user_id: authData.user.id, role: 'teacher' });
 
-      if (roleError) throw roleError;
+      if (roleError) {
+        console.error('Role error:', roleError);
+        throw roleError;
+      }
 
       // Create teacher record
       const { error: teacherError } = await supabase
         .from('teachers')
         .insert({
-          profile_id: authData.user!.id,
+          profile_id: authData.user.id,
           subject,
         });
 
-      if (teacherError) throw teacherError;
+      if (teacherError) {
+        console.error('Teacher error:', teacherError);
+        throw teacherError;
+      }
 
       toast.success('معلم با موفقیت اضافه شد');
       setOpen(false);
       resetForm();
       fetchTeachers();
     } catch (error: any) {
+      console.error('Add teacher error:', error);
       toast.error('خطا در افزودن معلم: ' + error.message);
     }
   };
@@ -173,38 +193,56 @@ const TeachersManagement = () => {
       }
 
       try {
+        const email = `${row.username}@school.local`;
+        
         const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: `${row.username}@school.local`,
+          email,
           password: row.password,
         });
 
         if (authError) throw authError;
+        
+        if (!authData.user) {
+          throw new Error('کاربر ایجاد نشد');
+        }
+
+        // Wait a bit for auth user to be created
+        await new Promise(resolve => setTimeout(resolve, 300));
 
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
-            id: authData.user!.id,
+            id: authData.user.id,
             full_name: row.full_name,
             username: row.username,
-            email: `${row.username}@school.local`,
+            email,
           });
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          console.error('Profile error for', row.username, ':', profileError);
+          throw profileError;
+        }
 
         const { error: roleError } = await supabase
           .from('user_roles')
-          .insert({ user_id: authData.user!.id, role: 'teacher' });
+          .insert({ user_id: authData.user.id, role: 'teacher' });
 
-        if (roleError) throw roleError;
+        if (roleError) {
+          console.error('Role error for', row.username, ':', roleError);
+          throw roleError;
+        }
 
         const { error: teacherError } = await supabase
           .from('teachers')
           .insert({
-            profile_id: authData.user!.id,
+            profile_id: authData.user.id,
             subject: row.subject || null,
           });
 
-        if (teacherError) throw teacherError;
+        if (teacherError) {
+          console.error('Teacher error for', row.username, ':', teacherError);
+          throw teacherError;
+        }
 
         successCount++;
       } catch (error) {
