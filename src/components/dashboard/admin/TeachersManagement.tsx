@@ -52,6 +52,18 @@ const TeachersManagement = () => {
     e.preventDefault();
     
     try {
+      // Check if username already exists
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+
+      if (existingProfile) {
+        toast.error('این نام کاربری قبلاً استفاده شده است');
+        return;
+      }
+
       const email = `${username}@school.local`;
       
       // Create auth user
@@ -60,10 +72,18 @@ const TeachersManagement = () => {
         password,
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        if (authError.message.includes('User already registered')) {
+          toast.error('این نام کاربری قبلاً ثبت شده است');
+        } else {
+          toast.error('خطا در ایجاد کاربر: ' + authError.message);
+        }
+        return;
+      }
       
       if (!authData.user) {
-        throw new Error('کاربر ایجاد نشد');
+        toast.error('کاربر ایجاد نشد');
+        return;
       }
 
       // Wait a bit for auth user to be created
@@ -81,7 +101,8 @@ const TeachersManagement = () => {
 
       if (profileError) {
         console.error('Profile error:', profileError);
-        throw profileError;
+        toast.error('خطا در ایجاد پروفایل: ' + profileError.message);
+        return;
       }
 
       // Assign teacher role
@@ -91,7 +112,8 @@ const TeachersManagement = () => {
 
       if (roleError) {
         console.error('Role error:', roleError);
-        throw roleError;
+        toast.error('خطا در تعیین نقش: ' + roleError.message);
+        return;
       }
 
       // Create teacher record
@@ -104,7 +126,8 @@ const TeachersManagement = () => {
 
       if (teacherError) {
         console.error('Teacher error:', teacherError);
-        throw teacherError;
+        toast.error('خطا در ایجاد معلم: ' + teacherError.message);
+        return;
       }
 
       toast.success('معلم با موفقیت اضافه شد');
@@ -193,6 +216,19 @@ const TeachersManagement = () => {
       }
 
       try {
+        // Check if username already exists
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', row.username)
+          .maybeSingle();
+
+        if (existingProfile) {
+          console.log('Username already exists:', row.username);
+          errorCount++;
+          continue;
+        }
+
         const email = `${row.username}@school.local`;
         
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -200,10 +236,17 @@ const TeachersManagement = () => {
           password: row.password,
         });
 
-        if (authError) throw authError;
+        if (authError) {
+          if (!authError.message.includes('User already registered')) {
+            console.error('Auth error for', row.username, ':', authError);
+          }
+          errorCount++;
+          continue;
+        }
         
         if (!authData.user) {
-          throw new Error('کاربر ایجاد نشد');
+          errorCount++;
+          continue;
         }
 
         // Wait a bit for auth user to be created
@@ -220,7 +263,8 @@ const TeachersManagement = () => {
 
         if (profileError) {
           console.error('Profile error for', row.username, ':', profileError);
-          throw profileError;
+          errorCount++;
+          continue;
         }
 
         const { error: roleError } = await supabase
@@ -229,7 +273,8 @@ const TeachersManagement = () => {
 
         if (roleError) {
           console.error('Role error for', row.username, ':', roleError);
-          throw roleError;
+          errorCount++;
+          continue;
         }
 
         const { error: teacherError } = await supabase
@@ -241,7 +286,8 @@ const TeachersManagement = () => {
 
         if (teacherError) {
           console.error('Teacher error for', row.username, ':', teacherError);
-          throw teacherError;
+          errorCount++;
+          continue;
         }
 
         successCount++;
