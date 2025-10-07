@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 
 interface Teacher {
   id: string;
@@ -27,6 +29,7 @@ const TeachersManagement = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [subject, setSubject] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchTeachers();
@@ -117,6 +120,108 @@ const TeachersManagement = () => {
     setSubject('');
   };
 
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+    try {
+      if (fileExtension === 'csv') {
+        Papa.parse(file, {
+          header: true,
+          complete: async (results) => {
+            await processImportData(results.data);
+          },
+          error: (error) => {
+            toast.error('خطا در خواندن فایل CSV');
+            console.error(error);
+          }
+        });
+      } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          await processImportData(jsonData);
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        toast.error('فرمت فایل باید CSV یا Excel باشد');
+      }
+    } catch (error) {
+      toast.error('خطا در پردازش فایل');
+      console.error(error);
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const processImportData = async (data: any[]) => {
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const row of data) {
+      if (!row.full_name || !row.username || !row.password) {
+        errorCount++;
+        continue;
+      }
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: `${row.username}@school.local`,
+          password: row.password,
+        });
+
+        if (authError) throw authError;
+
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user!.id,
+            full_name: row.full_name,
+            username: row.username,
+            email: `${row.username}@school.local`,
+          });
+
+        if (profileError) throw profileError;
+
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({ user_id: authData.user!.id, role: 'teacher' });
+
+        if (roleError) throw roleError;
+
+        const { error: teacherError } = await supabase
+          .from('teachers')
+          .insert({
+            profile_id: authData.user!.id,
+            subject: row.subject || null,
+          });
+
+        if (teacherError) throw teacherError;
+
+        successCount++;
+      } catch (error) {
+        console.error('Error importing teacher:', error);
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} معلم با موفقیت افزوده شد`);
+      fetchTeachers();
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} معلم با خطا مواجه شد`);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -125,13 +230,29 @@ const TeachersManagement = () => {
             <CardTitle>مدیریت معلم‌ها</CardTitle>
             <CardDescription>افزودن، ویرایش و حذف معلم‌ها</CardDescription>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="w-4 h-4" />
-                افزودن معلم
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleFileImport}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4" />
+              وارد کردن از فایل
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  افزودن معلم
+                </Button>
+              </DialogTrigger>
             <DialogContent dir="rtl">
               <DialogHeader>
                 <DialogTitle>افزودن معلم جدید</DialogTitle>
@@ -186,6 +307,7 @@ const TeachersManagement = () => {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 
 interface Student {
   id: string;
@@ -36,6 +38,7 @@ const StudentsManagement = () => {
   const [parentFullName, setParentFullName] = useState('');
   const [parentUsername, setParentUsername] = useState('');
   const [parentPassword, setParentPassword] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -165,6 +168,107 @@ const StudentsManagement = () => {
     setParentId('');
   };
 
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+    try {
+      if (fileExtension === 'csv') {
+        Papa.parse(file, {
+          header: true,
+          complete: async (results) => {
+            await processImportData(results.data);
+          },
+          error: (error) => {
+            toast.error('خطا در خواندن فایل CSV');
+            console.error(error);
+          }
+        });
+      } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          await processImportData(jsonData);
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        toast.error('فرمت فایل باید CSV یا Excel باشد');
+      }
+    } catch (error) {
+      toast.error('خطا در پردازش فایل');
+      console.error(error);
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const processImportData = async (data: any[]) => {
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const row of data) {
+      if (!row.full_name) {
+        errorCount++;
+        continue;
+      }
+
+      try {
+        let finalClassId = row.class_id || null;
+        let finalParentId = row.parent_id || null;
+
+        // If class_name is provided, find the class by name
+        if (row.class_name) {
+          const { data: classData } = await supabase
+            .from('classes')
+            .select('id')
+            .eq('name', row.class_name)
+            .maybeSingle();
+          if (classData) finalClassId = classData.id;
+        }
+
+        // If parent_username is provided, find the parent by username
+        if (row.parent_username) {
+          const { data: parentData } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('username', row.parent_username)
+            .maybeSingle();
+          if (parentData) finalParentId = parentData.id;
+        }
+
+        const { error } = await supabase
+          .from('students')
+          .insert({
+            full_name: row.full_name,
+            class_id: finalClassId,
+            parent_id: finalParentId,
+          });
+
+        if (error) throw error;
+        successCount++;
+      } catch (error) {
+        console.error('Error importing student:', error);
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} دانش‌آموز با موفقیت افزوده شد`);
+      fetchStudents();
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} دانش‌آموز با خطا مواجه شد`);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -174,6 +278,21 @@ const StudentsManagement = () => {
             <CardDescription>افزودن، ویرایش و حذف دانش‌آموزان</CardDescription>
           </div>
           <div className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleFileImport}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4" />
+              وارد کردن از فایل
+            </Button>
             <Dialog open={parentOpen} onOpenChange={setParentOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2">
