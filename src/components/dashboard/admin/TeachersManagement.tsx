@@ -48,6 +48,16 @@ const TeachersManagement = () => {
     setLoading(false);
   };
 
+  const sanitizeUsername = (username: string): string => {
+    // Remove all non-ASCII characters and replace with safe characters
+    return username
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\x00-\x7F]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase() || `user${Date.now()}`;
+  };
+
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -64,7 +74,8 @@ const TeachersManagement = () => {
         return;
       }
 
-      const email = `${username}@school.local`;
+      const sanitizedUsername = sanitizeUsername(username);
+      const email = `${sanitizedUsername}@school.local`;
       
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -229,7 +240,8 @@ const TeachersManagement = () => {
           continue;
         }
 
-        const email = `${row.username}@school.local`;
+        const sanitizedUsername = sanitizeUsername(row.username);
+        const email = `${sanitizedUsername}@school.local`;
         
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
