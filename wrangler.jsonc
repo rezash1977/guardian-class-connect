@@ -1,8 +1,9 @@
 {
-  "name": "alemohammad",
-  "compatibility_date": "2025-10-08",
-  "main": "./dist/index.html",
-  "assets": {
-    "directory": "./dist"
+    "name": "aleohammad",
+    "compatibility_date": "2025-06-04",
+    "assets": {
+      "directory": "./dist",
+        "pages_build_output_dir": "dist"
+    }
   }
-}
+  
