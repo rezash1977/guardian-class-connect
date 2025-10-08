@@ -1,9 +1,8 @@
 {
-    "name": "alemohammad",
-    "compatibility_date": "2025-06-04",
-    "assets": {
-      "directory": "./dist",
-        "pages_build_output_dir": "dist"
-    }
+  "name": "vite_react_shadcn_ts",
+  "compatibility_date": "2025-10-08",
+  "main": "./dist/index.html",
+  "assets": {
+    "directory": "./dist"
   }
-  
+}
