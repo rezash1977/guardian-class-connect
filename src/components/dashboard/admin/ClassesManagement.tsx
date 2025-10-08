@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 
 interface Class {
   id: string;
@@ -34,6 +34,7 @@ const ClassesManagement = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<Class | null>(null);
   const [className, setClassName] = useState('');
   const [grade, setGrade] = useState('');
   const [teacherId, setTeacherId] = useState('');
@@ -66,22 +67,50 @@ const ClassesManagement = () => {
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const { error } = await supabase
-      .from('classes')
-      .insert({
-        name: className,
-        grade,
-        teacher_id: teacherId || null,
-      });
+    if (editingClass) {
+      const { error } = await supabase
+        .from('classes')
+        .update({
+          name: className,
+          grade,
+          teacher_id: teacherId || null,
+        })
+        .eq('id', editingClass.id);
 
-    if (error) {
-      toast.error('خطا در افزودن کلاس');
+      if (error) {
+        toast.error('خطا در ویرایش کلاس');
+      } else {
+        toast.success('کلاس با موفقیت ویرایش شد');
+        setOpen(false);
+        resetForm();
+        fetchClasses();
+      }
     } else {
-      toast.success('کلاس با موفقیت اضافه شد');
-      setOpen(false);
-      resetForm();
-      fetchClasses();
+      const { error } = await supabase
+        .from('classes')
+        .insert({
+          name: className,
+          grade,
+          teacher_id: teacherId || null,
+        });
+
+      if (error) {
+        toast.error('خطا در افزودن کلاس');
+      } else {
+        toast.success('کلاس با موفقیت اضافه شد');
+        setOpen(false);
+        resetForm();
+        fetchClasses();
+      }
     }
+  };
+
+  const handleEditClass = (cls: Class) => {
+    setEditingClass(cls);
+    setClassName(cls.name);
+    setGrade(cls.grade);
+    setTeacherId(cls.teacher_id || '');
+    setOpen(true);
   };
 
   const handleDeleteClass = async (classId: string) => {
@@ -101,6 +130,7 @@ const ClassesManagement = () => {
   };
 
   const resetForm = () => {
+    setEditingClass(null);
     setClassName('');
     setGrade('');
     setTeacherId('');
@@ -114,7 +144,10 @@ const ClassesManagement = () => {
             <CardTitle>مدیریت کلاس‌ها</CardTitle>
             <CardDescription>افزودن، ویرایش و حذف کلاس‌ها</CardDescription>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) resetForm();
+          }}>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="w-4 h-4" />
@@ -123,9 +156,9 @@ const ClassesManagement = () => {
             </DialogTrigger>
             <DialogContent dir="rtl">
               <DialogHeader>
-                <DialogTitle>افزودن کلاس جدید</DialogTitle>
+                <DialogTitle>{editingClass ? 'ویرایش کلاس' : 'افزودن کلاس جدید'}</DialogTitle>
                 <DialogDescription>
-                  اطلاعات کلاس جدید را وارد کنید
+                  {editingClass ? 'اطلاعات کلاس را ویرایش کنید' : 'اطلاعات کلاس جدید را وارد کنید'}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleAddClass} className="space-y-4">
@@ -165,7 +198,7 @@ const ClassesManagement = () => {
                   </Select>
                 </div>
                 <Button type="submit" className="w-full">
-                  افزودن
+                  {editingClass ? 'ویرایش' : 'افزودن'}
                 </Button>
               </form>
             </DialogContent>
@@ -199,13 +232,22 @@ const ClassesManagement = () => {
                     <TableCell>{cls.grade}</TableCell>
                     <TableCell>{cls.teachers?.profiles.full_name || 'تعیین نشده'}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteClass(cls.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditClass(cls)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteClass(cls.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

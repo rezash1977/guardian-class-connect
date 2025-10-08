@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2, Upload } from 'lucide-react';
+import { Plus, Trash2, Upload, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -32,6 +32,7 @@ const StudentsManagement = () => {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentName, setStudentName] = useState('');
   const [classId, setClassId] = useState('');
   const [parentId, setParentId] = useState('');
@@ -128,22 +129,50 @@ const StudentsManagement = () => {
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const { error } = await supabase
-      .from('students')
-      .insert({
-        full_name: studentName,
-        class_id: classId || null,
-        parent_id: parentId || null,
-      });
+    if (editingStudent) {
+      const { error } = await supabase
+        .from('students')
+        .update({
+          full_name: studentName,
+          class_id: classId || null,
+          parent_id: parentId || null,
+        })
+        .eq('id', editingStudent.id);
 
-    if (error) {
-      toast.error('خطا در افزودن دانش‌آموز');
+      if (error) {
+        toast.error('خطا در ویرایش دانش‌آموز');
+      } else {
+        toast.success('دانش‌آموز با موفقیت ویرایش شد');
+        setOpen(false);
+        resetForm();
+        fetchStudents();
+      }
     } else {
-      toast.success('دانش‌آموز با موفقیت اضافه شد');
-      setOpen(false);
-      resetForm();
-      fetchStudents();
+      const { error } = await supabase
+        .from('students')
+        .insert({
+          full_name: studentName,
+          class_id: classId || null,
+          parent_id: parentId || null,
+        });
+
+      if (error) {
+        toast.error('خطا در افزودن دانش‌آموز');
+      } else {
+        toast.success('دانش‌آموز با موفقیت اضافه شد');
+        setOpen(false);
+        resetForm();
+        fetchStudents();
+      }
     }
+  };
+
+  const handleEditStudent = (student: Student) => {
+    setEditingStudent(student);
+    setStudentName(student.full_name);
+    setClassId(student.class_id || '');
+    setParentId(student.parent_id || '');
+    setOpen(true);
   };
 
   const handleDeleteStudent = async (studentId: string) => {
@@ -163,6 +192,7 @@ const StudentsManagement = () => {
   };
 
   const resetForm = () => {
+    setEditingStudent(null);
     setStudentName('');
     setClassId('');
     setParentId('');
@@ -321,7 +351,10 @@ const StudentsManagement = () => {
                 </form>
               </DialogContent>
             </Dialog>
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(isOpen) => {
+              setOpen(isOpen);
+              if (!isOpen) resetForm();
+            }}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Plus className="w-4 h-4" />
@@ -330,7 +363,7 @@ const StudentsManagement = () => {
               </DialogTrigger>
               <DialogContent dir="rtl">
                 <DialogHeader>
-                  <DialogTitle>افزودن دانش‌آموز جدید</DialogTitle>
+                  <DialogTitle>{editingStudent ? 'ویرایش دانش‌آموز' : 'افزودن دانش‌آموز جدید'}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleAddStudent} className="space-y-4">
                   <div className="space-y-2">
@@ -367,7 +400,7 @@ const StudentsManagement = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="submit" className="w-full">افزودن</Button>
+                  <Button type="submit" className="w-full">{editingStudent ? 'ویرایش' : 'افزودن'}</Button>
                 </form>
               </DialogContent>
             </Dialog>
@@ -401,9 +434,14 @@ const StudentsManagement = () => {
                     <TableCell>{student.classes?.name || 'تعیین نشده'}</TableCell>
                     <TableCell>{student.profiles?.full_name || 'تعیین نشده'}</TableCell>
                     <TableCell>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteStudent(student.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleEditStudent(student)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteStudent(student.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

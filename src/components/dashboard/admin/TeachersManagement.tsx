@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2, Upload } from 'lucide-react';
+import { Plus, Trash2, Upload, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -25,6 +25,7 @@ const TeachersManagement = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -61,94 +62,138 @@ const TeachersManagement = () => {
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    try {
-      // Check if username already exists
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', username)
-        .maybeSingle();
+    if (editingTeacher) {
+      try {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            full_name: fullName,
+          })
+          .eq('id', editingTeacher.profile_id);
 
-      if (existingProfile) {
-        toast.error('این نام کاربری قبلاً استفاده شده است');
-        return;
-      }
-
-      const sanitizedUsername = sanitizeUsername(username);
-      const email = `${sanitizedUsername}@school.local`;
-      
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (authError) {
-        if (authError.message.includes('User already registered')) {
-          toast.error('این نام کاربری قبلاً ثبت شده است');
-        } else {
-          toast.error('خطا در ایجاد کاربر: ' + authError.message);
+        if (profileError) {
+          toast.error('خطا در ویرایش پروفایل: ' + profileError.message);
+          return;
         }
-        return;
-      }
-      
-      if (!authData.user) {
-        toast.error('کاربر ایجاد نشد');
-        return;
-      }
 
-      // Wait a bit for auth user to be created
-      await new Promise(resolve => setTimeout(resolve, 500));
+        const { error: teacherError } = await supabase
+          .from('teachers')
+          .update({
+            subject,
+          })
+          .eq('id', editingTeacher.id);
 
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          full_name: fullName,
-          username,
+        if (teacherError) {
+          toast.error('خطا در ویرایش معلم: ' + teacherError.message);
+          return;
+        }
+
+        toast.success('معلم با موفقیت ویرایش شد');
+        setOpen(false);
+        resetForm();
+        fetchTeachers();
+      } catch (error: any) {
+        toast.error('خطا در ویرایش معلم: ' + error.message);
+      }
+    } else {
+      try {
+        // Check if username already exists
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
+
+        if (existingProfile) {
+          toast.error('این نام کاربری قبلاً استفاده شده است');
+          return;
+        }
+
+        const sanitizedUsername = sanitizeUsername(username);
+        const email = `${sanitizedUsername}@school.local`;
+        
+        // Create auth user
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
+          password,
         });
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-        toast.error('خطا در ایجاد پروفایل: ' + profileError.message);
-        return;
+        if (authError) {
+          if (authError.message.includes('User already registered')) {
+            toast.error('این نام کاربری قبلاً ثبت شده است');
+          } else {
+            toast.error('خطا در ایجاد کاربر: ' + authError.message);
+          }
+          return;
+        }
+        
+        if (!authData.user) {
+          toast.error('کاربر ایجاد نشد');
+          return;
+        }
+
+        // Wait a bit for auth user to be created
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Create profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            full_name: fullName,
+            username,
+            email,
+          });
+
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          toast.error('خطا در ایجاد پروفایل: ' + profileError.message);
+          return;
+        }
+
+        // Assign teacher role
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({ user_id: authData.user.id, role: 'teacher' });
+
+        if (roleError) {
+          console.error('Role error:', roleError);
+          toast.error('خطا در تعیین نقش: ' + roleError.message);
+          return;
+        }
+
+        // Create teacher record
+        const { error: teacherError } = await supabase
+          .from('teachers')
+          .insert({
+            profile_id: authData.user.id,
+            subject,
+          });
+
+        if (teacherError) {
+          console.error('Teacher error:', teacherError);
+          toast.error('خطا در ایجاد معلم: ' + teacherError.message);
+          return;
+        }
+
+        toast.success('معلم با موفقیت اضافه شد');
+        setOpen(false);
+        resetForm();
+        fetchTeachers();
+      } catch (error: any) {
+        console.error('Add teacher error:', error);
+        toast.error('خطا در افزودن معلم: ' + error.message);
       }
-
-      // Assign teacher role
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({ user_id: authData.user.id, role: 'teacher' });
-
-      if (roleError) {
-        console.error('Role error:', roleError);
-        toast.error('خطا در تعیین نقش: ' + roleError.message);
-        return;
-      }
-
-      // Create teacher record
-      const { error: teacherError } = await supabase
-        .from('teachers')
-        .insert({
-          profile_id: authData.user.id,
-          subject,
-        });
-
-      if (teacherError) {
-        console.error('Teacher error:', teacherError);
-        toast.error('خطا در ایجاد معلم: ' + teacherError.message);
-        return;
-      }
-
-      toast.success('معلم با موفقیت اضافه شد');
-      setOpen(false);
-      resetForm();
-      fetchTeachers();
-    } catch (error: any) {
-      console.error('Add teacher error:', error);
-      toast.error('خطا در افزودن معلم: ' + error.message);
     }
+  };
+
+  const handleEditTeacher = (teacher: Teacher) => {
+    setEditingTeacher(teacher);
+    setFullName(teacher.profiles.full_name);
+    setUsername(teacher.profiles.username);
+    setSubject(teacher.subject || '');
+    setPassword('');
+    setOpen(true);
   };
 
   const handleDeleteTeacher = async (teacherId: string, profileId: string) => {
@@ -168,6 +213,7 @@ const TeachersManagement = () => {
   };
 
   const resetForm = () => {
+    setEditingTeacher(null);
     setFullName('');
     setUsername('');
     setPassword('');
@@ -342,7 +388,10 @@ const TeachersManagement = () => {
               <Upload className="w-4 h-4" />
               وارد کردن از فایل
             </Button>
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(isOpen) => {
+              setOpen(isOpen);
+              if (!isOpen) resetForm();
+            }}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Plus className="w-4 h-4" />
@@ -351,9 +400,9 @@ const TeachersManagement = () => {
               </DialogTrigger>
             <DialogContent dir="rtl">
               <DialogHeader>
-                <DialogTitle>افزودن معلم جدید</DialogTitle>
+                <DialogTitle>{editingTeacher ? 'ویرایش معلم' : 'افزودن معلم جدید'}</DialogTitle>
                 <DialogDescription>
-                  اطلاعات معلم جدید را وارد کنید
+                  {editingTeacher ? 'اطلاعات معلم را ویرایش کنید' : 'اطلاعات معلم جدید را وارد کنید'}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleAddTeacher} className="space-y-4">
@@ -373,21 +422,24 @@ const TeachersManagement = () => {
                     id="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    required
+                    required={!editingTeacher}
+                    disabled={!!editingTeacher}
                     dir="rtl"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">رمز عبور</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    dir="rtl"
-                  />
-                </div>
+                {!editingTeacher && (
+                  <div className="space-y-2">
+                    <Label htmlFor="password">رمز عبور</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      dir="rtl"
+                    />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="subject">درس تخصصی</Label>
                   <Input
@@ -398,7 +450,7 @@ const TeachersManagement = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full">
-                  افزودن
+                  {editingTeacher ? 'ویرایش' : 'افزودن'}
                 </Button>
               </form>
             </DialogContent>
@@ -434,6 +486,13 @@ const TeachersManagement = () => {
                     <TableCell>{teacher.subject || '-'}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditTeacher(teacher)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
