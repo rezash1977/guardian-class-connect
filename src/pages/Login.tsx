@@ -22,7 +22,6 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Get user email by username
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('email')
@@ -35,7 +34,6 @@ const Login = () => {
         return;
       }
 
-      // Sign in with email and password
       const { error } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password,
@@ -59,40 +57,25 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Check if username already exists
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', username)
-        .maybeSingle();
-
-      if (existingProfile) {
-        toast.error('این نام کاربری قبلاً استفاده شده است');
-        setLoading(false);
-        return;
-      }
-
-      // Sign up the user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
             full_name: fullName,
             username: username,
-            role: 'parent'
-          }
-        }
+            // The role will be set to 'parent' by default in the trigger if not specified
+          },
+        },
       });
 
       if (signUpError) {
-        toast.error('خطا در ثبت‌نام: ' + signUpError.message);
-      } else if (authData.user) {
-        toast.success('ثبت‌نام موفقیت‌آمیز بود. لطفاً ایمیل خود را برای تایید حساب کاربری چک کنید.');
+        toast.error(`خطا در ثبت‌نام: ${signUpError.message}`);
+      } else {
+        toast.success('ثبت‌نام موفقیت‌آمیز بود. لطفاً ایمیل خود را برای فعال‌سازی حساب کاربری چک کنید.');
       }
     } catch (error: any) {
-      toast.error('خطا در ثبت‌نام: ' + (error.message || 'یک خطای ناشناخته رخ داد'));
+      toast.error(`خطا در ثبت‌نام: ${error.message}`);
     } finally {
       setLoading(false);
     }
