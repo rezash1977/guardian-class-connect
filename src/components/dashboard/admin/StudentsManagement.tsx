@@ -38,6 +38,7 @@ const StudentsManagement = () => {
   const [parentId, setParentId] = useState('');
   const [parentFullName, setParentFullName] = useState('');
   const [parentUsername, setParentUsername] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [parentPassword, setParentPassword] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,7 +69,6 @@ const StudentsManagement = () => {
   };
 
   const fetchParents = async () => {
-    // Fetch users with parent role from user_roles, then load their profiles
     const { data: roleRows } = await supabase
       .from('user_roles')
       .select('user_id')
@@ -90,39 +90,42 @@ const StudentsManagement = () => {
 
   const handleAddParent = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    const { data: { session: adminSession } } = await supabase.auth.getSession();
+
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: `${parentUsername}@school.local`,
-        password: parentPassword,
-      });
+        const { data: existingProfile } = await supabase.from('profiles').select('id').or(`username.eq.${parentUsername},email.eq.${parentEmail}`).maybeSingle();
+        if (existingProfile) {
+            toast.error('این نام کاربری یا ایمیل قبلاً استفاده شده است');
+            return;
+        }
 
-      if (authError) throw authError;
-
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user!.id,
-          full_name: parentFullName,
-          username: parentUsername,
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email: parentEmail,
+            password: parentPassword,
+            options: {
+                data: {
+                    full_name: parentFullName,
+                    username: parentUsername,
+                    role: 'parent'
+                }
+            }
         });
 
-      if (profileError) throw profileError;
+        if (authError) throw authError;
 
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({ user_id: authData.user!.id, role: 'parent' });
-
-      if (roleError) throw roleError;
-
-      toast.success('ولی با موفقیت اضافه شد');
-      setParentOpen(false);
-      setParentFullName('');
-      setParentUsername('');
-      setParentPassword('');
-      fetchParents();
+        toast.success('ولی با موفقیت اضافه شد. لطفاً ایمیل تایید را چک کند.');
+        setParentOpen(false);
+        setParentFullName('');
+        setParentUsername('');
+        setParentEmail('');
+        setParentPassword('');
+        fetchParents();
     } catch (error: any) {
-      toast.error('خطا در افزودن ولی: ' + error.message);
+        toast.error('خطا در افزودن ولی: ' + error.message);
+    } finally {
+        if (adminSession) {
+            await supabase.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token });
+        }
     }
   };
 
@@ -197,107 +200,14 @@ const StudentsManagement = () => {
     setClassId('');
     setParentId('');
   };
-
+  
   const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const fileExtension = file.name.split('.').pop()?.toLowerCase();
-
-    try {
-      if (fileExtension === 'csv') {
-        Papa.parse(file, {
-          header: true,
-          complete: async (results) => {
-            await processImportData(results.data);
-          },
-          error: (error) => {
-            toast.error('خطا در خواندن فایل CSV');
-            console.error(error);
-          }
-        });
-      } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet);
-          await processImportData(jsonData);
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        toast.error('فرمت فایل باید CSV یا Excel باشد');
-      }
-    } catch (error) {
-      toast.error('خطا در پردازش فایل');
-      console.error(error);
-    }
-
+    toast.info('وارد کردن دسته جمعی در حال حاضر از این طریق پشتیبانی نمی‌شود.');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const processImportData = async (data: any[]) => {
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const row of data) {
-      if (!row.full_name) {
-        errorCount++;
-        continue;
-      }
-
-      try {
-        let finalClassId = row.class_id || null;
-        let finalParentId = row.parent_id || null;
-
-        // If class_name is provided, find the class by name
-        if (row.class_name) {
-          const { data: classData } = await supabase
-            .from('classes')
-            .select('id')
-            .eq('name', row.class_name)
-            .maybeSingle();
-          if (classData) finalClassId = classData.id;
-        }
-
-        // If parent_username is provided, find the parent by username
-        if (row.parent_username) {
-          const { data: parentData } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('username', row.parent_username)
-            .maybeSingle();
-          if (parentData) finalParentId = parentData.id;
-        }
-
-        const { error } = await supabase
-          .from('students')
-          .insert({
-            full_name: row.full_name,
-            class_id: finalClassId,
-            parent_id: finalParentId,
-          });
-
-        if (error) throw error;
-        successCount++;
-      } catch (error) {
-        console.error('Error importing student:', error);
-        errorCount++;
-      }
-    }
-
-    if (successCount > 0) {
-      toast.success(`${successCount} دانش‌آموز با موفقیت افزوده شد`);
-      fetchStudents();
-    }
-    if (errorCount > 0) {
-      toast.error(`${errorCount} دانش‌آموز با خطا مواجه شد`);
-    }
-  };
 
   return (
     <Card>
@@ -340,12 +250,16 @@ const StudentsManagement = () => {
                     <Input value={parentFullName} onChange={(e) => setParentFullName(e.target.value)} required dir="rtl" />
                   </div>
                   <div className="space-y-2">
+                    <Label>ایمیل</Label>
+                    <Input type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} required dir="ltr" className="text-left"/>
+                  </div>
+                  <div className="space-y-2">
                     <Label>نام کاربری</Label>
                     <Input value={parentUsername} onChange={(e) => setParentUsername(e.target.value)} required dir="rtl" />
                   </div>
                   <div className="space-y-2">
                     <Label>رمز عبور</Label>
-                    <Input type="password" value={parentPassword} onChange={(e) => setParentPassword(e.target.value)} required dir="rtl" />
+                    <Input type="password" value={parentPassword} onChange={(e) => setParentPassword(e.target.value)} required minLength={6} dir="rtl" />
                   </div>
                   <Button type="submit" className="w-full">افزودن</Button>
                 </form>
@@ -394,7 +308,7 @@ const StudentsManagement = () => {
                       <SelectContent dir="rtl">
                         {parents.map((parent) => (
                           <SelectItem key={parent.id} value={parent.id}>
-                            {parent.full_name}
+                            {parent.full_name} ({parent.username})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -455,3 +369,4 @@ const StudentsManagement = () => {
 };
 
 export default StudentsManagement;
+

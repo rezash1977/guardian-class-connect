@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '../integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -77,56 +77,22 @@ const Login = () => {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
             full_name: fullName,
             username: username,
+            role: 'parent'
           }
         }
       });
 
       if (signUpError) {
         toast.error('خطا در ثبت‌نام: ' + signUpError.message);
-        setLoading(false);
-        return;
+      } else if (authData.user) {
+        toast.success('ثبت‌نام موفقیت‌آمیز بود. لطفاً ایمیل خود را برای تایید حساب کاربری چک کنید.');
       }
-
-      if (authData.user) {
-        // Create profile
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            full_name: fullName,
-            username: username,
-            email: email,
-          });
-
-        if (profileError) {
-          toast.error('خطا در ایجاد پروفایل');
-          setLoading(false);
-          return;
-        }
-
-        // Assign default role (parent)
-        const { error: roleError } = await supabase
-          .from('user_roles')
-          .insert({
-            user_id: authData.user.id,
-            role: 'parent',
-          });
-
-        if (roleError) {
-          toast.error('خطا در تخصیص نقش');
-          setLoading(false);
-          return;
-        }
-
-        toast.success('ثبت‌نام موفقیت‌آمیز بود. در حال ورود...');
-        navigate('/dashboard');
-      }
-    } catch (error) {
-      toast.error('خطا در ثبت‌نام');
+    } catch (error: any) {
+      toast.error('خطا در ثبت‌نام: ' + (error.message || 'یک خطای ناشناخته رخ داد'));
     } finally {
       setLoading(false);
     }
@@ -245,3 +211,4 @@ const Login = () => {
 };
 
 export default Login;
+
