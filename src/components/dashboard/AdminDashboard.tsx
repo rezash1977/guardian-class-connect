@@ -8,7 +8,7 @@ import ClassesManagement from './admin/ClassesManagement';
 import StudentsManagement from './admin/StudentsManagement';
 import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
-import SubjectsManagement from './admin/SubjectsManagement';
+import SubjectsManagement from './admin/Subjectsmanagement';
 
 
 const AdminDashboard = () => {
