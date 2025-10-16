@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Users, GraduationCap, School, FileText, AlertTriangle } from 'lucide-react';
+import { LogOut, Users, GraduationCap, School, FileText, AlertTriangle, Book } from 'lucide-react';
 import TeachersManagement from './admin/TeachersManagement';
 import ClassesManagement from './admin/ClassesManagement';
 import StudentsManagement from './admin/StudentsManagement';
 import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
+import SubjectsManagement from './admin/SubjectsManagement';
 
 const AdminDashboard = () => {
   const { signOut } = useAuth();
@@ -36,10 +36,14 @@ const AdminDashboard = () => {
 
       <main className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6" dir="rtl">
-          <TabsList className="grid w-full grid-cols-5 h-auto p-1 bg-card shadow-sm">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6 h-auto p-1 bg-card shadow-sm">
             <TabsTrigger value="teachers" className="flex items-center gap-2 py-3">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">معلم‌ها</span>
+            </TabsTrigger>
+             <TabsTrigger value="subjects" className="flex items-center gap-2 py-3">
+              <Book className="w-4 h-4" />
+              <span className="hidden sm:inline">درس‌ها</span>
             </TabsTrigger>
             <TabsTrigger value="classes" className="flex items-center gap-2 py-3">
               <School className="w-4 h-4" />
@@ -59,25 +63,12 @@ const AdminDashboard = () => {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="teachers" className="space-y-4">
-            <TeachersManagement />
-          </TabsContent>
-
-          <TabsContent value="classes" className="space-y-4">
-            <ClassesManagement />
-          </TabsContent>
-
-          <TabsContent value="students" className="space-y-4">
-            <StudentsManagement />
-          </TabsContent>
-
-          <TabsContent value="attendance" className="space-y-4">
-            <AttendanceReports />
-          </TabsContent>
-
-          <TabsContent value="discipline" className="space-y-4">
-            <DisciplineReports />
-          </TabsContent>
+          <TabsContent value="teachers"><TeachersManagement /></TabsContent>
+          <TabsContent value="subjects"><SubjectsManagement /></TabsContent>
+          <TabsContent value="classes"><ClassesManagement /></TabsContent>
+          <TabsContent value="students"><StudentsManagement /></TabsContent>
+          <TabsContent value="attendance"><AttendanceReports /></TabsContent>
+          <TabsContent value="discipline"><DisciplineReports /></TabsContent>
         </Tabs>
       </main>
     </div>
@@ -85,3 +76,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+
