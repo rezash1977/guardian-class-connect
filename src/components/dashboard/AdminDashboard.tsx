@@ -10,7 +10,6 @@ import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
 import SubjectsManagement from './admin/SubjectsManagement';
 
-
 const AdminDashboard = () => {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('teachers');
@@ -37,7 +36,7 @@ const AdminDashboard = () => {
 
       <main className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6" dir="rtl">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6 h-auto p-1 bg-card shadow-sm">
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto p-1 bg-card shadow-sm">
             <TabsTrigger value="teachers" className="flex items-center gap-2 py-3">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">معلم‌ها</span>

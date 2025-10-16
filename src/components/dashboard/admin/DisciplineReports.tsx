@@ -1,262 +1,133 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle
-} from '@/components/ui/card';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
-} from '@/components/ui/table';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Input } from '@/components/ui/input';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from '@/components/ui/select';
-import {
-  Popover, PopoverContent, PopoverTrigger
-} from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { Search, Calendar as CalendarIcon } from 'lucide-react';
-import { format, startOfDay } from 'date-fns-jalali';
-import { faIR } from 'date-fns/locale';
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Search, Calendar as CalendarIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { format } from "date-fns-jalali";
+import { useSortableData } from '@/hooks/use-sortable-data';
 
+// Interface definitions
 interface DisciplineRecord {
   id: string;
   description: string;
   severity: string;
   created_at: string;
   students: { full_name: string } | null;
-  class_subjects: {
-    classes: { name: string } | null;
-  } | null;
+  classes: { id: string, name: string } | null;
   profiles: { full_name: string } | null;
 }
 
-interface Class {
-  id: string;
-  name: string;
+interface ClassInfo {
+    id: string;
+    name: string;
 }
 
 const DisciplineReports = () => {
   const [records, setRecords] = useState<DisciplineRecord[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState<ClassInfo[]>([]);
+
+  // Filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClass, setSelectedClass] = useState('all');
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [filterClassId, setFilterClassId] = useState('all');
+  const [date, setDate] = useState<Date | undefined>();
+
+  const { items: sortedItems, requestSort, sortConfig } = useSortableData(records, { key: 'created_at', direction: 'descending' });
 
   useEffect(() => {
-    fetchData();
+    fetchClasses();
+    fetchRecords();
   }, []);
 
-  const fetchData = async () => {
+  const fetchRecords = async () => {
     setLoading(true);
-    const [recordsRes, classesRes] = await Promise.all([
-      supabase
-        .from('discipline_records')
-        .select(`
-          *,
-          students (full_name),
-          class_subjects (
-            classes (name)
-          ),
-          profiles (full_name)
-        `)
-        .order('created_at', { ascending: false }),
-      supabase.from('classes').select('id, name')
-    ]);
-
-    if (classesRes.error) {
-      toast.error('خطا در بارگذاری کلاس‌ها');
-      setClasses([]);
-    } else {
-      setClasses(classesRes.data || []);
-    }
-
-    if (recordsRes.error) {
-      toast.error('خطا در بارگذاری گزارش‌ها');
-      setRecords([]);
-      setLoading(false);
-      return;
-    }
-
-    // نرمال‌سازی داده‌ها به ساختار DisciplineRecord
-    const raw = recordsRes.data || [];
-    const normalized: DisciplineRecord[] = raw.map((r: any) => {
-      // students ممکن است آرایه یا شیء یا null باشد
-      let studentObj: { full_name: string } | null = null;
-      if (r.students) {
-        if (Array.isArray(r.students)) studentObj = r.students[0] ?? null;
-        else studentObj = r.students;
-      }
-
-      // class_subjects ممکن است آرایه یا شیء یا null باشد.
-      // هدف: تبدیل به { classes: { name } | null } | null
-      let csObj: { classes: { name: string } | null } | null = null;
-      if (r.class_subjects) {
-        const firstCs = Array.isArray(r.class_subjects) ? r.class_subjects[0] : r.class_subjects;
-        if (firstCs) {
-          csObj = {
-            classes: firstCs.classes ?? null
-          };
-        }
-      }
-
-      // profiles ممکن است آرایه/شیء/null
-      let profileObj: { full_name: string } | null = null;
-      if (r.profiles) {
-        if (Array.isArray(r.profiles)) profileObj = r.profiles[0] ?? null;
-        else profileObj = r.profiles;
-      }
-
-      return {
-        id: String(r.id),
-        description: String(r.description ?? ''),
-        severity: String(r.severity ?? ''),
-        created_at: String(r.created_at ?? ''),
-        students: studentObj,
-        class_subjects: csObj,
-        profiles: profileObj,
-      };
-    });
-
-    setRecords(normalized);
+    const { data, error } = await supabase
+      .from('discipline_records')
+      .select('*, students(full_name), classes(id, name), profiles(full_name)');
+    
+    if (error) toast.error('خطا در بارگذاری گزارش‌ها: ' + error.message);
+    else setRecords((data as DisciplineRecord[]) || []);
     setLoading(false);
   };
+  
+  const fetchClasses = async () => {
+    const { data } = await supabase.from('classes').select('id, name');
+    setClasses(data || []);
+  };
+  
+  const filteredRecords = useMemo(() => {
+    if (!sortedItems) return [];
+    return sortedItems.filter(record => {
+      const searchTermLower = searchTerm.toLowerCase();
+      const nameMatch = record.students?.full_name.toLowerCase().includes(searchTermLower) ?? false;
+      const classMatch = filterClassId === 'all' || record.classes?.id === filterClassId;
+      const dateMatch = !date || format(new Date(record.created_at), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
+      return nameMatch && classMatch && dateMatch;
+    });
+  }, [sortedItems, searchTerm, filterClassId, date]);
 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
-      case 'low':
-        return <Badge className="bg-green-500 hover:bg-green-600">کم</Badge>;
-      case 'medium':
-        return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-black">متوسط</Badge>;
-      case 'high':
-        return <Badge variant="destructive">شدید</Badge>;
-      default:
-        return <Badge variant="outline">{severity}</Badge>;
+      case 'low': return <Badge className="bg-green-500 hover:bg-green-600">کم</Badge>;
+      case 'medium': return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-black">متوسط</Badge>;
+      case 'high': return <Badge variant="destructive">شدید</Badge>;
+      default: return <Badge variant="outline">{severity}</Badge>;
     }
   };
-
-  const filteredRecords = useMemo(() => {
-    return records.filter((record) => {
-      const studentNameMatch =
-        !searchTerm ||
-        (record.students?.full_name ?? '')
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase());
-
-      const classMatch =
-        selectedClass === 'all' ||
-        (record.class_subjects?.classes?.name ?? '') ===
-          classes.find((c) => c.id === selectedClass)?.name;
-
-      const dateMatch =
-        !selectedDate ||
-        startOfDay(new Date(record.created_at)).getTime() ===
-          startOfDay(selectedDate).getTime();
-
-      return studentNameMatch && classMatch && dateMatch;
-    });
-  }, [records, searchTerm, selectedClass, selectedDate, classes]);
+  
+  const SortableHeader = ({ sortKey, children }: { sortKey: string, children: React.ReactNode }) => {
+    const icon = !sortConfig || sortConfig.key !== sortKey
+        ? <ArrowUpDown className="mr-2 h-4 w-4 opacity-50" />
+        : sortConfig.direction === 'ascending'
+        ? <ArrowUp className="mr-2 h-4 w-4" />
+        : <ArrowDown className="mr-2 h-4 w-4" />;
+    return <Button variant="ghost" onClick={() => requestSort(sortKey)}>{children}{icon}</Button>
+  };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>گزارش موارد انضباطی</CardTitle>
-        <CardDescription>مشاهده تمام موارد انضباطی ثبت‌شده</CardDescription>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
-          {/* جستجوی نام دانش‌آموز */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="جستجوی نام دانش‌آموز..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-              dir="rtl"
-            />
-          </div>
-
-          {/* فیلتر بر اساس کلاس */}
-          <Select value={selectedClass} onValueChange={setSelectedClass}>
-            <SelectTrigger>
-              <SelectValue placeholder="فیلتر بر اساس کلاس" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">همه کلاس‌ها</SelectItem>
-              {classes.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* فیلتر بر اساس تاریخ */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className="w-full justify-start text-left font-normal"
-              >
-                <CalendarIcon className="ml-2 h-4 w-4" />
-                {selectedDate ? (
-                  format(selectedDate, 'PPP', { locale: faIR })
-                ) : (
-                  <span>فیلتر بر اساس تاریخ</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={setSelectedDate}
-                initialFocus
-                locale={faIR}
-              />
-            </PopoverContent>
-          </Popover>
+        <CardDescription>مشاهده و فیلتر تمام موارد انضباطی ثبت شده</CardDescription>
+        <div className="flex flex-wrap items-center gap-2 pt-4">
+            <div className="relative flex-grow min-w-[200px]"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="جستجوی نام دانش آموز..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" dir="rtl"/></div>
+            <Select value={filterClassId} onValueChange={setFilterClassId}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="فیلتر کلاس" /></SelectTrigger><SelectContent><SelectItem value="all">همه کلاس‌ها</SelectItem>{classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+             <Popover>
+                <PopoverTrigger asChild><Button variant={"outline"} className="w-full sm:w-[240px] justify-start text-right font-normal"><CalendarIcon className="ml-2 h-4 w-4" />{date ? format(date, "PPP") : <span>انتخاب تاریخ</span>}</Button></PopoverTrigger>
+                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} /></PopoverContent>
+            </Popover>
+             <Button variant="outline" onClick={() => { setSearchTerm(''); setFilterClassId('all'); setDate(undefined); }}>پاک کردن فیلترها</Button>
         </div>
       </CardHeader>
-
       <CardContent>
-        {loading ? (
-          <div className="text-center py-8">در حال بارگذاری...</div>
-        ) : (
+        {loading ? <div className="text-center py-8">در حال بارگذاری...</div> : (
           <Table dir="rtl">
             <TableHeader>
               <TableRow>
-                <TableHead className="text-right">دانش‌آموز</TableHead>
-                <TableHead className="text-right">کلاس</TableHead>
-                <TableHead className="text-right">شرح</TableHead>
-                <TableHead className="text-right">شدت</TableHead>
-                <TableHead className="text-right">تاریخ</TableHead>
-                <TableHead className="text-right">ثبت‌شده توسط</TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="students.full_name">دانش‌آموز</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="classes.name">کلاس</SortableHeader></TableHead>
+                <TableHead className="text-right w-[40%]"><SortableHeader sortKey="description">شرح</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="severity">شدت</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="created_at">تاریخ</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="profiles.full_name">ثبت توسط</SortableHeader></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRecords.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-8 text-muted-foreground"
-                  >
-                    هیچ سابقه‌ای یافت نشد
-                  </TableCell>
-                </TableRow>
-              ) : (
+              {filteredRecords.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">هیچ سابقه‌ای یافت نشد</TableCell></TableRow> : (
                 filteredRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>{record.students?.full_name || 'نامشخص'}</TableCell>
-                    <TableCell>{record.class_subjects?.classes?.name || 'نامشخص'}</TableCell>
+                    <TableCell>{record.classes?.name || 'نامشخص'}</TableCell>
                     <TableCell>{record.description}</TableCell>
                     <TableCell>{getSeverityBadge(record.severity)}</TableCell>
-                    <TableCell>
-                      {format(new Date(record.created_at), 'yyyy/MM/dd HH:mm', { locale: faIR })}
-                    </TableCell>
+                    <TableCell>{format(new Date(record.created_at), 'yyyy/MM/dd')}</TableCell>
                     <TableCell>{record.profiles?.full_name || 'نامشخص'}</TableCell>
                   </TableRow>
                 ))
@@ -270,3 +141,4 @@ const DisciplineReports = () => {
 };
 
 export default DisciplineReports;
+
