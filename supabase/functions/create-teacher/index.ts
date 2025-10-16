@@ -9,18 +9,15 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json();
-    console.log("Received request body:", body);
-    const { email, password, full_name, username, subject } = body;
+    const { email, password, full_name, username, subject } = await req.json();
 
     if (!email || !password || !full_name || !username) {
-      return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+      return new Response(JSON.stringify({ error: 'فیلدهای ایمیل، رمز عبور، نام کامل و نام کاربری الزامی هستند' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
     }
 
-    // Create a Supabase client with the service role
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -30,17 +27,10 @@ serve(async (req) => {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // Auto-confirm email for simplicity
-      user_metadata: {
-        full_name: fullName,
-        username: username,
-        role: 'teacher'
-      }
+      email_confirm: true,
     })
 
     if (authError) {
-      console.error('Auth user creation error:', authError)
-      // Check for specific, common errors to provide better feedback
       if (authError.message.includes('already registered')) {
         return new Response(JSON.stringify({ error: 'این ایمیل قبلا ثبت‌نام کرده است' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -52,32 +42,21 @@ serve(async (req) => {
 
     const userId = authData.user.id
 
-    // 2. The database trigger should handle creating the profile.
-    // We wait a moment to ensure the trigger has fired.
-    // A more robust solution might be to check if the profile exists.
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const { data: profile, error: profileError } = await supabaseAdmin
+    // 2. Manually insert the profile with the correct role
+    const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .single();
+      .insert({
+        id: userId,
+        full_name: full_name,
+        username: username,
+        role: 'teacher',
+      });
 
-    if (profileError || !profile) {
-      console.error('Profile not found after user creation. Trigger might have failed.', profileError);
-       // Manually insert profile as a fallback
-       const { error: manualProfileError } = await supabaseAdmin
-        .from('profiles')
-        .insert({
-          id: userId,
-          full_name: fullName,
-          username: username,
-          role: 'teacher',
-        });
-       if (manualProfileError) {
-          console.error("Manual profile insertion failed:", manualProfileError);
-          throw new Error('پروفایل کاربر پس از ایجاد، ساخته نشد.');
-       }
+    if (profileError) {
+      // If profile insertion fails, we should probably delete the auth user
+      // to avoid orphaned users. This is a more robust approach.
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      throw new Error(`خطا در ایجاد پروفایل: ${profileError.message}`);
     }
 
     // 3. Create the teacher record
@@ -89,8 +68,8 @@ serve(async (req) => {
       })
 
     if (teacherError) {
-      console.error('Teacher record creation error:', teacherError)
-      throw teacherError
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      throw new Error(`خطا در ایجاد رکورد معلم: ${teacherError.message}`);
     }
 
     return new Response(JSON.stringify({ message: 'معلم با موفقیت ایجاد شد' }), {
@@ -98,7 +77,6 @@ serve(async (req) => {
       status: 201,
     })
   } catch (error) {
-    console.error('Unexpected error:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

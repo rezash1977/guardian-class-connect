@@ -4,6 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar as CalendarIcon, Filter, X } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface AttendanceRecord {
   id: string;
@@ -20,20 +26,50 @@ interface AttendanceRecord {
   } | null;
 }
 
+interface Class {
+  id: string;
+  name: string;
+}
+
+interface Student {
+  id: string;
+  full_name: string;
+}
+
 const AttendanceReports = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [selectedClass, setSelectedClass] = useState<string>('');
+  const [selectedStudent, setSelectedStudent] = useState<string>('');
 
   useEffect(() => {
     fetchRecords();
+    fetchClasses();
+    fetchStudents();
   }, []);
 
-  const fetchRecords = async () => {
-    const { data, error } = await supabase
+  const fetchRecords = async (filters = {}) => {
+    setLoading(true);
+    let query = supabase
       .from('attendance')
-      .select('*, students(full_name), classes(name), profiles(full_name)')
-      .order('date', { ascending: false })
-      .limit(50);
+      .select('*, students(full_name), classes(name), profiles(full_name)');
+
+    if (filters.date) {
+      query = query.eq('date', format(filters.date, 'yyyy-MM-dd'));
+    }
+    if (filters.classId) {
+      query = query.eq('class_id', filters.classId);
+    }
+    if (filters.studentId) {
+      query = query.eq('student_id', filters.studentId);
+    }
+
+    query = query.order('date', { ascending: false }).limit(100);
+
+    const { data, error } = await query;
     
     if (error) {
       toast.error('خطا در بارگذاری گزارش‌ها');
@@ -41,6 +77,36 @@ const AttendanceReports = () => {
       setRecords(data || []);
     }
     setLoading(false);
+  };
+
+  const handleFilter = () => {
+    fetchRecords({
+      date: selectedDate,
+      classId: selectedClass,
+      studentId: selectedStudent,
+    });
+  };
+
+  const handleClearFilters = () => {
+    setSelectedDate(undefined);
+    setSelectedClass('');
+    setSelectedStudent('');
+    fetchRecords();
+  };
+
+  const fetchClasses = async () => {
+    const { data } = await supabase.from('classes').select('id, name');
+    setClasses(data || []);
+  };
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase.from('students').select('id, profiles(id, full_name)');
+    if (error) {
+      toast.error("خطا در واکشی دانش‌آموزان");
+      return;
+    }
+    const formattedStudents = data?.map(s => ({ id: s.id, full_name: s.profiles?.full_name || 'دانش‌آموز بی‌نام' })) || [];
+    setStudents(formattedStudents);
   };
 
   const getStatusBadge = (status: string) => {
@@ -59,8 +125,62 @@ const AttendanceReports = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>گزارش حضور و غیاب</CardTitle>
-        <CardDescription>مشاهده تمام سوابق حضور و غیاب</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>گزارش حضور و غیاب</CardTitle>
+            <CardDescription>مشاهده و فیلتر کردن سوابق حضور و غیاب</CardDescription>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col sm:flex-row gap-4 p-4 border rounded-lg" dir="rtl">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant={"outline"}
+                className="w-full sm:w-[280px] justify-start text-right font-normal"
+              >
+                <CalendarIcon className="ml-2 h-4 w-4" />
+                {selectedDate ? format(selectedDate, "PPP") : <span>انتخاب تاریخ</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+
+          <Select value={selectedClass} onValueChange={setSelectedClass}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="انتخاب کلاس" />
+            </SelectTrigger>
+            <SelectContent>
+              {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedStudent} onValueChange={setSelectedStudent}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="انتخاب دانش‌آموز" />
+            </SelectTrigger>
+            <SelectContent>
+              {students.map(s => <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <div className="flex gap-2">
+            <Button onClick={handleFilter} className="w-full sm:w-auto gap-2">
+              <Filter className="w-4 h-4" />
+              اعمال فیلتر
+            </Button>
+            <Button onClick={handleClearFilters} variant="outline" className="w-full sm:w-auto gap-2">
+              <X className="w-4 h-4" />
+              پاک کردن
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? (
