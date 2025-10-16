@@ -188,10 +188,73 @@ const ClassesManagement = () => {
               </DialogContent>
             </Dialog>
           </div>
+<<<<<<< HEAD
+=======
+          <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) resetForm();
+          }}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" />
+                افزودن کلاس
+              </Button>
+            </DialogTrigger>
+            <DialogContent dir="rtl">
+              <DialogHeader>
+                <DialogTitle>{editingClass ? 'ویرایش کلاس' : 'افزودن کلاس جدید'}</DialogTitle>
+                <DialogDescription>
+                  {editingClass ? 'اطلاعات کلاس را ویرایش کنید' : 'اطلاعات کلاس جدید را وارد کنید'}
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddClass} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="className">نام کلاس</Label>
+                  <Input
+                    id="className"
+                    value={className}
+                    onChange={(e) => setClassName(e.target.value)}
+                    required
+                    dir="rtl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="grade">پایه تحصیلی</Label>
+                  <Input
+                    id="grade"
+                    value={grade}
+                    onChange={(e) => setGrade(e.target.value)}
+                    required
+                    dir="rtl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="teacher">معلم کلاس</Label>
+                  <Select value={teacherId} onValueChange={setTeacherId}>
+                    <SelectTrigger dir="rtl">
+                      <SelectValue placeholder="انتخاب معلم" />
+                    </SelectTrigger>
+                    <SelectContent dir="rtl">
+                      {teachers.map((teacher) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.profiles?.full_name || `معلم (ID: ${teacher.id.substring(0, 5)})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full">
+                  {editingClass ? 'ویرایش' : 'افزودن'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+>>>>>>> 236c2d89051b8098b2151ab89f0f5410f35686f0
         </div>
          <div className="relative mt-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="جستجوی نام کلاس..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" dir="rtl"/></div>
       </CardHeader>
       <CardContent>
+<<<<<<< HEAD
         {loading ? <div className="text-center py-8">در حال بارگذاری...</div> : (
           <div className="space-y-4">
             {filteredClasses.map(cls => (
@@ -239,6 +302,56 @@ const ClassesManagement = () => {
             ))}
              {filteredClasses.length === 0 && <div className="text-center py-8 text-muted-foreground">هیچ کلاسی یافت نشد.</div>}
           </div>
+=======
+        {loading ? (
+          <div className="text-center py-8">در حال بارگذاری...</div>
+        ) : (
+          <Table dir="rtl">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-right">نام کلاس</TableHead>
+                <TableHead className="text-right">پایه</TableHead>
+                <TableHead className="text-right">معلم</TableHead>
+                <TableHead className="text-right">عملیات</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {classes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    هیچ کلاسی یافت نشد
+                  </TableCell>
+                </TableRow>
+              ) : (
+                classes.map((cls) => (
+                  <TableRow key={cls.id}>
+                    <TableCell>{cls.name}</TableCell>
+                    <TableCell>{cls.grade}</TableCell>
+                    <TableCell>{cls.teachers?.profiles?.full_name || 'تعیین نشده'}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditClass(cls)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteClass(cls.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+>>>>>>> 236c2d89051b8098b2151ab89f0f5410f35686f0
         )}
       </CardContent>
     </Card>

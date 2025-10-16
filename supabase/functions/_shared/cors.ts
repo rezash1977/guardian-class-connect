@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Follow this setup guide to integrate the Deno language server with your editor:
 // https://deno.land/manual/getting_started/setup_your_environment
 // This enables autocomplete, go to definition, and more.
@@ -91,3 +92,9 @@ Deno.serve(async (req) => {
   }
 })
 
+=======
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+>>>>>>> 236c2d89051b8098b2151ab89f0f5410f35686f0

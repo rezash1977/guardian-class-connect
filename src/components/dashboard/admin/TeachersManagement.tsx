@@ -85,6 +85,7 @@ const TeachersManagement = () => {
       }
 
     } else {
+<<<<<<< HEAD
       // Logic for adding a new teacher via Edge Function
       const { data, error } = await supabase.functions.invoke('bulk-signup', {
         body: {
@@ -108,6 +109,34 @@ const TeachersManagement = () => {
         setOpen(false);
         resetForm();
         fetchTeachers();
+=======
+      try {
+        const { data, error } = await supabase.functions.invoke('create-teacher', {
+          body: {
+            email,
+            password,
+            fullName,
+            username,
+            subject,
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (data.error) {
+          toast.error(data.error);
+        } else {
+          toast.success(data.message || 'معلم با موفقیت اضافه شد');
+          setOpen(false);
+          resetForm();
+          fetchTeachers();
+        }
+      } catch (error: any) {
+        console.error('Add teacher error:', error);
+        toast.error(error.message || 'خطا در افزودن معلم');
+>>>>>>> 236c2d89051b8098b2151ab89f0f5410f35686f0
       }
     }
   };
