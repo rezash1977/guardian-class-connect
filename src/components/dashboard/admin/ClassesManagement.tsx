@@ -191,7 +191,7 @@ const ClassesManagement = () => {
                     <SelectContent dir="rtl">
                       {teachers.map((teacher) => (
                         <SelectItem key={teacher.id} value={teacher.id}>
-                          {teacher.profiles.full_name}
+                          {teacher.profiles?.full_name || `معلم (ID: ${teacher.id.substring(0, 5)})`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -230,7 +230,7 @@ const ClassesManagement = () => {
                   <TableRow key={cls.id}>
                     <TableCell>{cls.name}</TableCell>
                     <TableCell>{cls.grade}</TableCell>
-                    <TableCell>{cls.teachers?.profiles.full_name || 'تعیین نشده'}</TableCell>
+                    <TableCell>{cls.teachers?.profiles?.full_name || 'تعیین نشده'}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button

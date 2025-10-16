@@ -88,64 +88,32 @@ const TeachersManagement = () => {
         toast.error('خطا در ویرایش معلم: ' + error.message);
       }
     } else {
-      // Store current admin session
-      const { data: { session: adminSession } } = await supabase.auth.getSession();
-      
       try {
-        // Check if username already exists
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(`username.eq.${username},email.eq.${email}`)
-          .maybeSingle();
-
-        if (existingProfile) {
-          toast.error('نام کاربری یا ایمیل قبلاً استفاده شده است');
-          return;
-        }
-
-        // Create auth user
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-              username: username,
-              role: 'teacher'
-            }
-          }
+        const { data, error } = await supabase.functions.invoke('create-teacher', {
+          body: {
+            email,
+            password,
+            fullName,
+            username,
+            subject,
+          },
         });
 
-        if (authError) {
-          toast.error('خطا در ایجاد کاربر: ' + authError.message);
-          return;
-        }
-        
-        if (!authData.user) {
-          toast.error('کاربر ایجاد نشد');
-          return;
+        if (error) {
+          throw error;
         }
 
-        toast.success('معلم با موفقیت اضافه شد. لطفاً ایمیل تایید را چک کنید.');
-        setOpen(false);
-        resetForm();
-        fetchTeachers();
-
+        if (data.error) {
+          toast.error(data.error);
+        } else {
+          toast.success(data.message || 'معلم با موفقیت اضافه شد');
+          setOpen(false);
+          resetForm();
+          fetchTeachers();
+        }
       } catch (error: any) {
         console.error('Add teacher error:', error);
-        toast.error('خطا در افزودن معلم: ' + error.message);
-      } finally {
-        // Restore admin session
-        if (adminSession) {
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: adminSession.access_token,
-            refresh_token: adminSession.refresh_token,
-          });
-          if (sessionError) {
-            toast.error("خطا در بازیابی نشست ادمین. لطفاً صفحه را رفرش کنید.");
-          }
-        }
+        toast.error(error.message || 'خطا در افزودن معلم');
       }
     }
   };
