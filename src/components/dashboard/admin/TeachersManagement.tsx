@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2, Upload, Pencil } from 'lucide-react';
+import { Plus, Trash2, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
@@ -32,8 +32,6 @@ const TeachersManagement = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [subject, setSubject] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     fetchTeachers();
   }, []);
@@ -113,15 +111,8 @@ const TeachersManagement = () => {
         }
       } catch (error: any) {
         console.error('Add teacher error:', error);
-        if (error.context && typeof error.context.json === 'function') {
-          error.context.json().then((errorBody: any) => {
-            toast.error(errorBody.error || 'خطای ناشناخته از سرور دریافت شد');
-          }).catch(() => {
-            toast.error('خطا در ارتباط با سرور');
-          });
-        } else {
-          toast.error(error.message || 'یک خطای پیش‌بینی نشده رخ داد');
-        }
+        const errorMessage = error.details || error.message || 'یک خطای پیش‌بینی نشده رخ داد';
+        toast.error(errorMessage);
       }
     }
   };
@@ -172,16 +163,6 @@ const TeachersManagement = () => {
     setSubject('');
   };
 
-  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    // This function remains largely the same, but it should be noted that it uses signUp
-    // and will cause session issues if not handled like the manual add.
-    // For simplicity, we assume one-by-one addition is the primary flow.
-    toast.info('وارد کردن دسته جمعی در حال حاضر از این طریق پشتیبانی نمی‌شود.');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -191,21 +172,6 @@ const TeachersManagement = () => {
             <CardDescription>افزودن، ویرایش و حذف معلم‌ها</CardDescription>
           </div>
           <div className="flex gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={handleFileImport}
-              className="hidden"
-            />
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="w-4 h-4" />
-              وارد کردن از فایل
-            </Button>
             <Dialog open={open} onOpenChange={(isOpen) => {
               setOpen(isOpen);
               if (!isOpen) resetForm();

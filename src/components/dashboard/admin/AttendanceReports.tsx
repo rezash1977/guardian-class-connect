@@ -100,13 +100,16 @@ const AttendanceReports = () => {
   };
 
   const fetchStudents = async () => {
-    const { data, error } = await supabase.from('students').select('id, profiles(id, full_name)');
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('role', 'student');
+
     if (error) {
       toast.error("خطا در واکشی دانش‌آموزان");
-      return;
+    } else {
+      setStudents(data.map(p => ({ id: p.id, full_name: p.full_name })) || []);
     }
-    const formattedStudents = data?.map(s => ({ id: s.id, full_name: s.profiles?.full_name || 'دانش‌آموز بی‌نام' })) || [];
-    setStudents(formattedStudents);
   };
 
   const getStatusBadge = (status: string) => {
