@@ -93,7 +93,7 @@ const TeachersManagement = () => {
           body: {
             email,
             password,
-            fullName,
+            full_name: fullName,
             username,
             subject,
           },
@@ -113,7 +113,15 @@ const TeachersManagement = () => {
         }
       } catch (error: any) {
         console.error('Add teacher error:', error);
-        toast.error(error.message || 'خطا در افزودن معلم');
+        if (error.context && typeof error.context.json === 'function') {
+          error.context.json().then((errorBody: any) => {
+            toast.error(errorBody.error || 'خطای ناشناخته از سرور دریافت شد');
+          }).catch(() => {
+            toast.error('خطا در ارتباط با سرور');
+          });
+        } else {
+          toast.error(error.message || 'یک خطای پیش‌بینی نشده رخ داد');
+        }
       }
     }
   };

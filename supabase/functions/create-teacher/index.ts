@@ -9,9 +9,11 @@ serve(async (req) => {
   }
 
   try {
-    const { email, password, fullName, username, subject } = await req.json()
+    const body = await req.json();
+    console.log("Received request body:", body);
+    const { email, password, full_name, username, subject } = body;
 
-    if (!email || !password || !fullName || !username) {
+    if (!email || !password || !full_name || !username) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
