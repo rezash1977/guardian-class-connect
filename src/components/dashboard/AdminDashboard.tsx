@@ -10,6 +10,7 @@ import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
 import SubjectsManagement from './admin/SubjectsManagement';
 
+
 const AdminDashboard = () => {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('teachers');
