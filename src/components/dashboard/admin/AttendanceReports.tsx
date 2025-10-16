@@ -108,7 +108,7 @@ const AttendanceReports = () => {
     if (error) {
       toast.error("خطا در واکشی دانش‌آموزان");
     } else {
-      setStudents(data.map(p => ({ id: p.id, full_name: p.full_name })) || []);
+      setStudents(data?.map(p => ({ id: p.id, full_name: p.full_name })) || []);
     }
   };
 
