@@ -10,8 +10,10 @@ import { toast } from 'sonner';
 import { GraduationCap } from 'lucide-react';
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [signupUsername, setSignupUsername] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -26,7 +28,7 @@ const Login = () => {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('email')
-        .eq('username', username)
+        .eq('username', loginUsername)
         .maybeSingle();
 
       if (profileError || !profile?.email) {
@@ -38,7 +40,7 @@ const Login = () => {
       // Sign in with email and password
       const { error } = await supabase.auth.signInWithPassword({
         email: profile.email,
-        password,
+        password: loginPassword,
       });
 
       if (error) {
@@ -63,7 +65,7 @@ const Login = () => {
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id')
-        .eq('username', username)
+        .eq('username', signupUsername)
         .maybeSingle();
 
       if (existingProfile) {
@@ -75,12 +77,12 @@ const Login = () => {
       // Sign up the user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
-        password,
+        password: signupPassword,
         options: {
           emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
             full_name: fullName,
-            username: username,
+            username: signupUsername,
             role: 'parent'
           }
         }
@@ -122,8 +124,8 @@ const Login = () => {
                   <Input
                     id="login-username"
                     type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
                     required
                     dir="rtl"
                     className="text-right"
@@ -134,8 +136,8 @@ const Login = () => {
                   <Input
                     id="login-password"
                     type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
                     required
                     dir="rtl"
                     className="text-right"
@@ -178,8 +180,8 @@ const Login = () => {
                   <Input
                     id="signup-username"
                     type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    value={signupUsername}
+                    onChange={(e) => setSignupUsername(e.target.value)}
                     required
                     dir="rtl"
                     className="text-right"
@@ -190,8 +192,8 @@ const Login = () => {
                   <Input
                     id="signup-password"
                     type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
                     required
                     dir="rtl"
                     className="text-right"

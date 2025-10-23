@@ -90,42 +90,30 @@ const StudentsManagement = () => {
 
   const handleAddParent = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { data: { session: adminSession } } = await supabase.auth.getSession();
 
     try {
-        const { data: existingProfile } = await supabase.from('profiles').select('id').or(`username.eq.${parentUsername},email.eq.${parentEmail}`).maybeSingle();
-        if (existingProfile) {
-            toast.error('این نام کاربری یا ایمیل قبلاً استفاده شده است');
-            return;
-        }
+      const { error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: parentEmail,
+          password: parentPassword,
+          full_name: parentFullName,
+          username: parentUsername,
+        },
+      });
 
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: parentEmail,
-            password: parentPassword,
-            options: {
-                data: {
-                    full_name: parentFullName,
-                    username: parentUsername,
-                    role: 'parent'
-                }
-            }
-        });
+      if (error) {
+        throw new Error(error.message);
+      }
 
-        if (authError) throw authError;
-
-        toast.success('ولی با موفقیت اضافه شد. لطفاً ایمیل تایید را چک کند.');
-        setParentOpen(false);
-        setParentFullName('');
-        setParentUsername('');
-        setParentEmail('');
-        setParentPassword('');
-        fetchParents();
+      toast.success('ولی با موفقیت اضافه شد');
+      setParentOpen(false);
+      setParentFullName('');
+      setParentUsername('');
+      setParentEmail('');
+      setParentPassword('');
+      fetchParents();
     } catch (error: any) {
-        toast.error('خطا در افزودن ولی: ' + error.message);
-    } finally {
-        if (adminSession) {
-            await supabase.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token });
-        }
+      toast.error('خطا در افزودن ولی: ' + error.message);
     }
   };
 
@@ -202,9 +190,94 @@ const StudentsManagement = () => {
   };
   
   const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    toast.info('وارد کردن دسته جمعی در حال حاضر از این طریق پشتیبانی نمی‌شود.');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileType = file.name.split('.').pop()?.toLowerCase();
+    if (fileType !== 'csv' && fileType !== 'xlsx' && fileType !== 'xls') {
+      toast.error('فرمت فایل پشتیبانی نمی‌شود. لطفاً از فایل CSV یا Excel استفاده کنید.');
+      return;
+    }
+
+    try {
+      let data: any[] = [];
+      if (fileType === 'csv') {
+        data = await new Promise((resolve) => {
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => resolve(results.data),
+          });
+        });
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const workbook = XLSX.read(e.target?.result, { type: 'binary' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          data = XLSX.utils.sheet_to_json(worksheet);
+        };
+        reader.readAsBinaryString(file);
+      }
+
+      if (data.length === 0) {
+        toast.warning('فایل خالی است یا هیچ داده‌ای یافت نشد.');
+        return;
+      }
+
+      const importPromises = data.map(async (row: any) => {
+        const { full_name, username, email, password, student_name, class_name } = row;
+        if (!full_name || !username || !email || !password || !student_name || !class_name) {
+          toast.warning(`داده‌های ناقص برای ردیف: ${JSON.stringify(row)}`);
+          return;
+        }
+
+        const { data: parentUser, error: parentError } = await supabase.functions.invoke('create-user', {
+          body: {
+            email,
+            password,
+            full_name,
+            username,
+          },
+        });
+
+        if (parentError) {
+          toast.error(`خطا در افزودن ولی ${full_name}: ${parentError.message}`);
+          return;
+        }
+
+        const { data: classData } = await supabase
+          .from('classes')
+          .select('id')
+          .eq('name', class_name)
+          .single();
+
+        if (!classData) {
+          toast.error(`کلاس با نام ${class_name} یافت نشد.`);
+          return;
+        }
+
+        const { error: studentError } = await supabase.from('students').insert({
+          full_name: student_name,
+          class_id: classData.id,
+          parent_id: parentUser.id,
+        });
+
+        if (studentError) {
+          toast.error(`خطا در افزودن دانش‌آموز ${student_name}: ${studentError.message}`);
+        }
+      });
+
+      await Promise.all(importPromises);
+      toast.success('وارد کردن دسته‌جمعی با موفقیت انجام شد');
+      fetchStudents();
+      fetchParents();
+    } catch (error: any) {
+      toast.error('خطا در پردازش فایل: ' + error.message);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
