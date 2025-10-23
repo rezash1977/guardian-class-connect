@@ -10,10 +10,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Search, Calendar as CalendarIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { format } from "date-fns-jalali";
+import { format, parse } from "date-fns-jalali"; // <-- Import parse
 import { useSortableData } from '@/hooks/use-sortable-data';
 
-// Interface definitions
+// Interface definitions remain the same
+// ... existing code ...
 interface AttendanceRecord {
   id: string;
   date: string;
@@ -31,6 +32,7 @@ interface ClassInfo {
     id: string;
     name: string;
 }
+
 
 const AttendanceReports = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -54,7 +56,7 @@ const AttendanceReports = () => {
     const { data, error } = await supabase
       .from('attendance')
       .select('*, students(full_name), class_subjects(classes(id, name), subjects(name)), profiles(full_name)');
-    
+
     if (error) toast.error('خطا در بارگذاری گزارش‌ها: ' + error.message);
     else setRecords((data as AttendanceRecord[]) || []);
     setLoading(false);
@@ -69,12 +71,18 @@ const AttendanceReports = () => {
     if(!sortedItems) return [];
     return sortedItems.filter(record => {
       const searchTermLower = searchTerm.toLowerCase();
-      const nameMatch = record.students?.full_name.toLowerCase().includes(searchTermLower) ?? false;
+      // Ensure properties exist before accessing them and calling toLowerCase
+      const studentNameMatch = record.students?.full_name?.toLowerCase().includes(searchTermLower) ?? false;
       const classMatch = filterClassId === 'all' || record.class_subjects?.classes?.id === filterClassId;
-      const dateMatch = !date || format(new Date(record.date.replace(/-/g, '/')), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
-      return nameMatch && classMatch && dateMatch;
+      // Parse record.date correctly before formatting and comparing
+      const recordDateStr = record.date ? format(parse(record.date, 'yyyy-MM-dd', new Date()), 'yyyy-MM-dd') : null;
+      const filterDateStr = date ? format(date, 'yyyy-MM-dd') : null;
+      const dateMatch = !date || (recordDateStr && filterDateStr && recordDateStr === filterDateStr);
+
+      return studentNameMatch && classMatch && dateMatch;
     });
   }, [sortedItems, searchTerm, filterClassId, date]);
+
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -84,7 +92,7 @@ const AttendanceReports = () => {
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
-  
+
   const SortableHeader = ({ sortKey, children }: { sortKey: string, children: React.ReactNode }) => {
     const icon = !sortConfig || sortConfig.key !== sortKey
         ? <ArrowUpDown className="mr-2 h-4 w-4 opacity-50" />
@@ -130,7 +138,8 @@ const AttendanceReports = () => {
                     <TableCell>{record.students?.full_name || 'نامشخص'}</TableCell>
                     <TableCell>{record.class_subjects?.classes?.name || 'نامشخص'}</TableCell>
                     <TableCell>{record.class_subjects?.subjects?.name || 'نامشخص'}</TableCell>
-                    <TableCell>{format(new Date(record.date.replace(/-/g, '/')), 'yyyy/MM/dd')}</TableCell>
+                    {/* Use parse to correctly interpret the date string before formatting */}
+                    <TableCell>{record.date ? format(parse(record.date, 'yyyy-MM-dd', new Date()), 'yyyy/MM/dd') : 'نامشخص'}</TableCell>
                     <TableCell>{record.lesson_period}</TableCell>
                     <TableCell>{getStatusBadge(record.status)}</TableCell>
                     <TableCell>{record.profiles?.full_name || 'نامشخص'}</TableCell>
@@ -146,4 +155,3 @@ const AttendanceReports = () => {
 };
 
 export default AttendanceReports;
-
