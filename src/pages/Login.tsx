@@ -88,7 +88,7 @@ const Login = () => {
           <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center">
             <GraduationCap className="w-9 h-9 text-primary-foreground" />
           </div>
-          <CardTitle className="text-3xl font-bold">سیستم مدیریت مدرسه</CardTitle>
+          <CardTitle className="text-3xl font-bold">سیستم مدیریت هنرستان آل محمد ص</CardTitle>
           <CardDescription>برای ورود به پنل خود، اطلاعات را وارد کنید</CardDescription>
         </CardHeader>
         <CardContent>
