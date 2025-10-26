@@ -34,7 +34,7 @@ const AdminDashboard = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold">پنل مدیریت</h1>
-              <p className="text-sm text-muted-foreground">مدیریت کامل مدرسه</p>
+              <p className="text-sm text-muted-foreground">هنرستان آل محمد ص</p>
             </div>
           </div>
           <Button onClick={signOut} variant="destructive" className="gap-2">
