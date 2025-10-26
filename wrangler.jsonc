@@ -1,11 +1,8 @@
 {
   "name": "guardian-class-connect",
-  "main": "dist/index.html",
-  "compatibility_date": "2025-10-26",
-  "build": {
-    "command": "npm run build"
-  },
-  "assets": {
-    "directory": "dist"
-  }
+    "compatibility_date": "2025-06-04",
+    "assets": {
+      "directory": "./dist",
+        "pages_build_output_dir": "dist"
+    }
 }
