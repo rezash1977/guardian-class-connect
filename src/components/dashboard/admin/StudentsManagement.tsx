@@ -297,7 +297,7 @@ const StudentsManagement = () => {
         const parentMap = new Map(currentParents.map(p => [p.username, p.id]));
         const classMap = new Map(currentClasses.map(c => [c.name, c.id]));
 
-        const studentsToInsert: any[] = [];
+        let studentsToInsert: any[] = [];
         const parentsToCreate: any[] = [];
         const errors: string[] = [];
         const processedUsernames = new Set<string>(); // Track parents being created in this batch
