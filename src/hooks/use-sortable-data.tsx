@@ -1,74 +1,62 @@
 import { useState, useMemo } from 'react';
 
-// Define the sort direction type
-type SortDirection = 'ascending' | 'descending';
-
-// Define the structure for the sort configuration
-interface SortConfig {
-  key: string; // Changed to string to allow dot notation for nested properties
-  direction: SortDirection;
-}
-
-/**
- * A helper function to safely access nested property values, including the first element of an array in the path.
- * @param obj The object to access.
- * @param path The dot-notation path to the property (e.g., 'class_subjects.subjects.name').
- * @returns The nested value or null if not found.
- */
+// Helper function to safely get nested property value
 const getNestedValue = (obj: any, path: string): any => {
+  if (!path) return undefined;
+  // Handle potential arrays in the path (e.g., class_subjects[0].subjects.name)
+  // For simplicity in this hook, we'll sort based on the first item if it's an array.
+  const keys = path.replace(/\[\d+\]/g, '').split('.').filter(Boolean); // Basic handling for first item
   let current = obj;
-  for (const part of path.split('.')) {
+  for (const key of keys) {
     if (current === null || current === undefined) {
-      return null;
+      return undefined;
     }
-    // If the current level is an array, we proceed with the first element.
+     // If the current level is an array, try accessing the property on the first element
     if (Array.isArray(current)) {
-      current = current.length > 0 ? current[0] : null;
-      if (current === null || current === undefined) {
-        return null;
-      }
+        current = current.length > 0 ? current[0]?.[key] : undefined;
+    } else {
+        current = current[key];
     }
-    current = current[part];
+  }
+  // If the final value is an object (e.g., from class_subjects), try getting a 'name' property
+  if (typeof current === 'object' && current !== null && 'name' in current) {
+      return current.name;
+  }
+  if (typeof current === 'object' && current !== null && 'full_name' in current) {
+      return current.full_name;
   }
   return current;
 };
 
-/**
- * A custom hook to sort an array of objects, with support for nested properties.
- * @param items The array of items to sort.
- * @param initialConfig The initial sort configuration.
- * @returns An object with sorted items, a function to request sorting, and the current sort configuration.
- */
-export const useSortableData = <T extends object>(
-  items: T[],
-  initialConfig: SortConfig | null = null
-) => {
-  const [sortConfig, setSortConfig] = useState<SortConfig | null>(initialConfig);
+
+interface SortConfig<T> {
+  key: keyof T | string; // Allow string for nested keys
+  direction: 'ascending' | 'descending';
+}
+
+export const useSortableData = <T>(items: T[] | null | undefined, config: SortConfig<T> | null = null) => {
+  const [sortConfig, setSortConfig] = useState<SortConfig<T> | null>(config);
 
   const sortedItems = useMemo(() => {
-    // Return an empty array if items is not available
-    if (!items) return [];
-    
-    // Create a mutable copy of the items
+    if (!items) return null;
     let sortableItems = [...items];
-    
-    // Sort the items if a configuration is set
     if (sortConfig !== null) {
       sortableItems.sort((a, b) => {
-        const aValue = getNestedValue(a, sortConfig.key);
-        const bValue = getNestedValue(b, sortConfig.key);
+        // Use the helper function to get potentially nested values
+        const aValue = getNestedValue(a, sortConfig.key as string);
+        const bValue = getNestedValue(b, sortConfig.key as string);
 
+        // Handle null/undefined values by pushing them to the end
         if (aValue === null || aValue === undefined) return 1;
         if (bValue === null || bValue === undefined) return -1;
-        
-        // LocaleCompare for string comparison to handle Persian characters correctly
+
+        // Use localeCompare for string comparison (handles Persian characters)
         if (typeof aValue === 'string' && typeof bValue === 'string') {
-            return sortConfig.direction === 'ascending' 
-                ? aValue.localeCompare(bValue, 'fa') 
-                : bValue.localeCompare(aValue, 'fa');
+          const comparison = aValue.localeCompare(bValue, 'fa'); // Use Persian locale
+           return sortConfig.direction === 'ascending' ? comparison : -comparison;
         }
 
-        // Standard comparison for numbers and other types
+        // Standard comparison for numbers, dates, etc.
         if (aValue < bValue) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
@@ -81,17 +69,9 @@ export const useSortableData = <T extends object>(
     return sortableItems;
   }, [items, sortConfig]);
 
-  /**
-   * Toggles the sort direction or sets a new sort key.
-   * @param key The key of the object to sort by (can use dot notation).
-   */
-  const requestSort = (key: string) => {
-    let direction: SortDirection = 'ascending';
-    if (
-      sortConfig &&
-      sortConfig.key === key &&
-      sortConfig.direction === 'ascending'
-    ) {
+  const requestSort = (key: keyof T | string) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
     }
     setSortConfig({ key, direction });

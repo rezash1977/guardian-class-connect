@@ -1,252 +1,355 @@
-import { useState, useMemo, ReactNode } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Upload, FileDown, ArrowRight, ArrowLeft, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, ArrowRight, FileText, Loader2, X, AlertCircle, CheckCircle } from 'lucide-react'; // Added CheckCircle
+import * as XLSX from 'xlsx';
+import { Label } from '@/components/ui/label';
+import { Input } from "@/components/ui/input";
 
-// Props definition for the component
 interface ExcelImportDialogProps {
-  triggerButton: ReactNode;
-  requiredFields: Record<string, string>;
-  onImport: (data: any[]) => Promise<{ success: boolean; errors?: string[] }>;
-  templateFileName: string;
+  requiredFields: Record<string, string>; // { api_key: "Display Name" }
+  optionalFields?: Record<string, string>;
+  onImport: (data: Record<string, any>[]) => Promise<{ success: boolean; results?: any[]; errors?: string[] }>;
+  templateGenerator: () => void;
+  entityName: string; // e.g., "معلم", "دانش‌آموز"
 }
 
-// Type definitions for internal state
-type Step = 'upload' | 'map' | 'preview' | 'result';
-type Mapping = Record<string, string>;
-type ImportResult = {
-  successCount: number;
-  errors: { row: number; message: string }[];
-};
-
-export const ExcelImportDialog = ({ triggerButton, requiredFields, onImport, templateFileName }: ExcelImportDialogProps) => {
-  // Component State
+export const ExcelImportDialog = ({ requiredFields, optionalFields = {}, onImport, templateGenerator, entityName }: ExcelImportDialogProps) => {
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<Step>('upload');
+  const [step, setStep] = useState(1); // 1: Upload, 2: Map Columns, 3: Preview, 4: Results
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
-  const [data, setData] = useState<any[]>([]);
-  const [mapping, setMapping] = useState<Mapping>({});
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [data, setData] = useState<Record<string, any>[]>([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({}); // { "Header From Excel": "api_key" }
+  const [importResults, setImportResults] = useState<{ success: boolean; results?: any[]; errors?: string[] } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Memoized value to check if column mapping is complete
-  const isMappingComplete = useMemo(() => {
-    const requiredKeys = Object.keys(requiredFields);
-    const mappedDbFields = Object.values(mapping);
-    return requiredKeys.every(key => mappedDbFields.includes(key));
-  }, [mapping, requiredFields]);
+  const allFields = { ...requiredFields, ...optionalFields };
+  const allFieldKeys = Object.keys(allFields);
 
-  // Reset all states to initial values
-  const resetState = () => {
-    setStep('upload');
-    setFile(null);
-    setHeaders([]);
-    setData([]);
-    setMapping({});
-    setIsImporting(false);
-    setImportResult(null);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile) {
       setFile(selectedFile);
-      parseFile(selectedFile);
-    }
-  };
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const workbook = XLSX.read(e.target?.result, { type: 'binary', cellFormula: false, cellHTML: false });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          // Read headers specifically using header: 1
+          const headerData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-  const parseFile = (fileToParse: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        
-        const jsonData = XLSX.utils.sheet_to_json<any>(worksheet, { header: 1, raw: false, defval: null });
-        
-        if (jsonData.length < 1) {
-            toast.error("فایل اکسل خالی است یا سربرگ ندارد.");
+          if (headerData.length < 1) {
+            toast.error("فایل اکسل خالی است.");
+            resetState();
             return;
-        }
+          }
 
-        const fileHeaders = (jsonData[0] as string[]).filter(h => h && h.trim() !== '');
-        const fileData = jsonData.slice(1).map(rowArray => {
-          const rowObject: { [key: string]: any } = {};
-          fileHeaders.forEach((header, index) => {
-            const value = (rowArray as any[])[index];
-            rowObject[header] = value !== null && value !== undefined ? String(value) : null;
+          // Filter out null, undefined, or empty string headers BEFORE using them
+          const fileHeaders = headerData[0].map(String).filter(h => h && h.trim() !== '');
+          if (fileHeaders.length === 0) {
+             toast.error("فایل اکسل سربرگ معتبر ندارد.");
+             resetState();
+             return;
+          }
+          setHeaders(fileHeaders); // Set the valid headers
+
+          // Read actual data using the valid headers
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+
+           if (jsonData.length === 0) {
+             toast.error("فایل اکسل داده‌ای ندارد (فقط شامل سربرگ است).");
+             // Keep headers for mapping, but clear data
+             setData([]);
+             setStep(2); // Still allow mapping
+             return;
+           }
+
+
+          // Process data, ensuring all values are strings
+          const fileData = jsonData.map(row => {
+            let rowData: Record<string, any> = {};
+             // Iterate over valid headers found previously
+            fileHeaders.forEach((header) => {
+              // Convert all cell values to string
+              rowData[header] = row[header] !== undefined && row[header] !== null ? String(row[header]) : '';
+            });
+            return rowData;
           });
-          return rowObject;
-        });
 
-        setHeaders(fileHeaders);
-        setData(fileData);
-        setStep('map');
+          setData(fileData);
+          setStep(2); // Move to column mapping
 
-      } catch (error) {
-        toast.error("خطا در پردازش فایل اکسل.");
-        resetState();
-      }
-    };
-    reader.readAsArrayBuffer(fileToParse);
-  };
+          // Auto-map columns
+          const initialMapping: Record<string, string> = {};
+          fileHeaders.forEach(header => {
+              const foundKey = allFieldKeys.find(key => allFields[key].toLowerCase() === header.toLowerCase());
+              if (foundKey) {
+                  initialMapping[header] = foundKey;
+              }
+          });
+          setColumnMapping(initialMapping);
 
-  const handleTemplateDownload = () => {
-    const ws = XLSX.utils.aoa_to_sheet([Object.keys(requiredFields)]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, templateFileName);
-  };
-  
-  const handleFinalImport = async () => {
-    setIsImporting(true);
-    const mappedData = data.map(row => {
-        const newRow: { [key: string]: any } = {};
-        for (const excelHeader in mapping) {
-            const dbField = mapping[excelHeader];
-            newRow[dbField] = row[excelHeader];
+        } catch (error) {
+           toast.error("خطا در خواندن فایل اکسل. لطفاً از فرمت صحیح اطمینان حاصل کنید.");
+           console.error("Excel read error:", error);
+           resetState();
         }
-        return newRow;
-    });
-
-    const result = await onImport(mappedData);
-
-    if (result.success) {
-        setImportResult({ successCount: mappedData.length - (result.errors?.length || 0), errors: result.errors?.map(e => ({row: 0, message: e})) || [] });
-    } else {
-        setImportResult({ successCount: 0, errors: result.errors?.map(e => ({row: 0, message: e})) || [{row: 0, message: 'یک خطای ناشناخته رخ داد'}] });
+      };
+      reader.readAsBinaryString(selectedFile);
     }
-    setIsImporting(false);
-    setStep('result');
+  };
+
+  // *** FIX: Corrected logic to check requiredFields keys against mapped values ***
+  const isMappingComplete = useMemo(() => {
+    const mappedApiKeys = Object.values(columnMapping);
+    // requiredFields is an object, iterate over its keys
+    return Object.keys(requiredFields).every(reqKey => mappedApiKeys.includes(reqKey));
+  }, [columnMapping, requiredFields]);
+
+
+  const handleMappingChange = (excelHeader: string, apiKey: string) => {
+    setColumnMapping(prev => ({ ...prev, [excelHeader]: apiKey }));
+  };
+
+  const handleProceedToPreview = () => {
+    if (!isMappingComplete) {
+      toast.error("لطفاً تمام ستون‌های الزامی را نگاشت کنید.");
+      return;
+    }
+    if (data.length === 0) {
+        toast.warn("فایل اکسل داده ای برای پیش نمایش یا وارد کردن ندارد.");
+        return;
+    }
+    setStep(3);
   };
 
   const getMappedData = () => {
-      return data.map(row => {
-          const newRow: { [key: string]: any } = {};
-          Object.keys(requiredFields).forEach(field => {
-              const excelHeader = Object.keys(mapping).find(key => mapping[key] === field);
-              newRow[field] = excelHeader ? row[excelHeader] : '';
-          });
-          return newRow;
-      });
+    return data.map(row => {
+      let mappedRow: Record<string, any> = {};
+      for (const excelHeader in columnMapping) {
+        const apiKey = columnMapping[excelHeader];
+        // Ensure apiKey is valid and exists in allFields before mapping
+        if (apiKey && allFieldKeys.includes(apiKey)) {
+          mappedRow[apiKey] = row[excelHeader];
+        }
+      }
+      return mappedRow;
+    });
+  };
+
+  const handleImport = async () => {
+    setIsLoading(true);
+    setImportResults(null); // Clear previous results
+    const mappedData = getMappedData();
+    if (mappedData.length === 0) {
+        toast.error("هیچ داده معتبری برای وارد کردن وجود ندارد.");
+        setIsLoading(false);
+        setStep(4); // Show empty results
+        setImportResults({ success: true, results: [], errors: ["هیچ داده‌ای برای وارد کردن یافت نشد."] });
+        return;
+    }
+    const result = await onImport(mappedData);
+    setImportResults(result);
+    setIsLoading(false);
+    setStep(4); // Move to results step
+  };
+
+  const resetState = () => {
+    setStep(1);
+    setFile(null);
+    setHeaders([]);
+    setData([]);
+    setColumnMapping({});
+    setImportResults(null);
+    setIsLoading(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // Reset file input
+    }
+  };
+
+  const closeModal = () => {
+      setOpen(false);
+      // Delay reset to allow dialog close animation
+      setTimeout(resetState, 300);
   }
 
   return (
-    <Dialog open={open} onOpenChange={isOpen => { setOpen(isOpen); if (!isOpen) resetState(); }}>
-      <DialogTrigger asChild>{triggerButton}</DialogTrigger>
-      <DialogContent className="sm:max-w-4xl" dir="rtl">
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) closeModal(); else setOpen(true); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2">
+          <Upload className="w-4 h-4" />
+          وارد کردن از اکسل
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl" dir="rtl">
         <DialogHeader>
-          <DialogTitle>وارد کردن دسته جمعی از اکسل</DialogTitle>
+          <DialogTitle>وارد کردن دسته‌جمعی {entityName}</DialogTitle>
           <DialogDescription>
-            {step === 'upload' && "فایل اکسل خود را بارگذاری کنید. می‌توانید فایل راهنما را برای مشاهده ستون‌های مورد نیاز دانلود کنید."}
-            {step === 'map' && "ستون‌های فایل اکسل خود را به فیلدهای مورد نیاز برنامه متصل کنید."}
-            {step === 'preview' && "داده‌های خوانده شده را قبل از وارد کردن نهایی بررسی کنید."}
-            {step === 'result' && "نتایج عملیات وارد کردن دسته جمعی."}
+            {step === 1 && `فایل اکسل حاوی اطلاعات ${entityName}ها را بارگذاری کنید.`}
+            {step === 2 && "ستون‌های فایل اکسل را به فیلدهای برنامه نگاشت کنید. (* الزامی)"}
+            {step === 3 && `پیش‌نمایش داده‌ها قبل از وارد کردن نهایی. (${data.length} ردیف)`}
+            {step === 4 && "نتایج عملیات وارد کردن."}
           </DialogDescription>
         </DialogHeader>
 
-        {step === 'upload' && (
-          <div className="py-8 flex flex-col items-center justify-center border-2 border-dashed rounded-lg space-y-4">
-            <Upload className="w-12 h-12 text-muted-foreground" />
-            <p className="text-muted-foreground">فایل خود را اینجا بکشید یا برای انتخاب کلیک کنید</p>
-            <Input type="file" accept=".xlsx, .xls" onChange={handleFileChange} className="w-auto" />
-            <Button variant="link" onClick={handleTemplateDownload} className="gap-2"><FileDown className="w-4 h-4" />دانلود فایل راهنما</Button>
-          </div>
-        )}
-
-        {step === 'map' && (
-          <div className="py-4 space-y-4">
-            <h3 className="font-semibold">تطبیق ستون‌ها</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Object.entries(requiredFields).map(([key, label]) => (
-                <div key={key} className="space-y-2">
-                  <Label>{label} <span className="text-destructive">*</span></Label>
-                  <Select onValueChange={(value) => {
-                    setMapping(prev => ({ ...prev, [value]: key }));
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="انتخاب ستون اکسل..." /></SelectTrigger>
-                    <SelectContent>
-                      {headers.map(header => (
-                        <SelectItem key={header} value={header}>{header}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
+        <div className="mt-4 max-h-[60vh] overflow-y-auto pr-2">
+          {step === 1 && (
+            <div className="flex flex-col items-center justify-center space-y-4 border-2 border-dashed border-muted rounded-lg p-10">
+              <FileText className="w-12 h-12 text-muted-foreground" />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls"
+                onChange={handleFileChange}
+                className="hidden"
+                id="excel-upload"
+              />
+              <Label htmlFor="excel-upload" className="cursor-pointer">
+                  <Button type="button" onClick={() => fileInputRef.current?.click()}>انتخاب فایل اکسل</Button>
+              </Label>
+              <Button variant="link" size="sm" onClick={templateGenerator}>دانلود فایل راهنما</Button>
+              <p className="text-xs text-muted-foreground">فقط فایل‌های .xlsx یا .xls</p>
             </div>
-            <DialogFooter className="pt-4">
-              <Button variant="outline" onClick={() => setStep('upload')} className="gap-2"><ArrowRight className="w-4 h-4"/>مرحله قبل</Button>
-              <Button onClick={() => setStep('preview')} disabled={!isMappingComplete} className="gap-2">ادامه<ArrowLeft className="w-4 h-4"/></Button>
-            </DialogFooter>
-          </div>
-        )}
+          )}
 
-        {step === 'preview' && (
-          <div className="py-4">
-              <h3 className="font-semibold mb-4">پیش‌نمایش داده‌ها ({data.length} ردیف)</h3>
-              <div className="max-h-96 overflow-auto border rounded-md">
-                 <Table>
-                    <TableHeader className="sticky top-0 bg-muted">
-                        <TableRow>{Object.values(requiredFields).map(label => <TableHead key={label} className="text-right">{label}</TableHead>)}</TableRow>
+          {step === 2 && (
+            <div className="space-y-4">
+              <p className="font-semibold">نگاشت ستون‌ها:</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {allFieldKeys.map(apiKey => (
+                  <div key={apiKey} className="flex items-center gap-2">
+                    <Label className="w-40 flex-shrink-0">
+                      {allFields[apiKey]} {requiredFields[apiKey] ? '*' : ''}
+                    </Label>
+                    <Select
+                      value={Object.keys(columnMapping).find(h => columnMapping[h] === apiKey) || ""}
+                      onValueChange={(excelHeader) => {
+                          const updatedMapping = { ...columnMapping };
+                          // Remove previous mapping using this excelHeader if it exists
+                          if (excelHeader && updatedMapping[excelHeader] && updatedMapping[excelHeader] !== apiKey) {
+                              toast.warn(`ستون "${excelHeader}" قبلاً به "${allFields[updatedMapping[excelHeader]]}" نگاشت شده بود. نگاشت قبلی حذف شد.`);
+                          }
+                          // Remove previous mapping for this apiKey if exists from another header
+                          Object.keys(updatedMapping).forEach(key => {
+                              if (updatedMapping[key] === apiKey) {
+                                  delete updatedMapping[key];
+                              }
+                          });
+                          // Add new mapping if an excelHeader is selected
+                          if (excelHeader) {
+                              updatedMapping[excelHeader] = apiKey;
+                          }
+                           setColumnMapping(updatedMapping);
+                      }}
+                    >
+                      <SelectTrigger className="flex-grow">
+                        <SelectValue placeholder="انتخاب ستون اکسل..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Add disabled option only if the field is optional */}
+                         {optionalFields[apiKey] && <SelectItem value="" >-- انتخاب نشده --</SelectItem>}
+                        {/* Filter headers to show only those not already mapped to a *different* apiKey */}
+                        {headers
+                          .filter(header => !columnMapping[header] || columnMapping[header] === apiKey)
+                          .map(header => (
+                          // Ensure value is not an empty string
+                          <SelectItem key={header} value={header || `_invalid_header_${header}`}>
+                              {header}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
+               <p className="font-semibold">پیش‌نمایش {Math.min(5, data.length)} ردیف اول:</p>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            {/* Display headers based on the actual mapping */}
+                            {allFieldKeys
+                                .filter(apiKey => Object.values(columnMapping).includes(apiKey))
+                                .map(apiKey => <TableHead key={apiKey} className="text-right">{allFields[apiKey]}</TableHead>)}
+                        </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {getMappedData().slice(0, 10).map((row, index) => (
-                            <TableRow key={index}>
-                                {Object.keys(requiredFields).map(field => <TableCell key={field}>{row[field]}</TableCell>)}
+                        {getMappedData().slice(0, 5).map((row, rowIndex) => (
+                            <TableRow key={rowIndex}>
+                                {allFieldKeys
+                                    .filter(apiKey => Object.values(columnMapping).includes(apiKey))
+                                    .map(apiKey => <TableCell key={apiKey}>{String(row[apiKey] ?? '')}</TableCell>)}
                             </TableRow>
                         ))}
                     </TableBody>
-                 </Table>
-              </div>
-               {data.length > 10 && <p className="text-sm text-muted-foreground mt-2">فقط ۱۰ ردیف اول برای پیش‌نمایش نمایش داده می‌شود.</p>}
-              <DialogFooter className="pt-6">
-                <Button variant="outline" onClick={() => setStep('map')} className="gap-2"><ArrowRight className="w-4 h-4"/>مرحله قبل</Button>
-                <Button onClick={handleFinalImport} disabled={isImporting} className="gap-2">
-                    {isImporting && <Loader2 className="w-4 h-4 animate-spin"/>}
-                    تایید و وارد کردن
-                </Button>
-            </DialogFooter>
-          </div>
-        )}
-        
-        {step === 'result' && (
-          <div className="py-4 space-y-4">
-            <h3 className="font-semibold">نتایج</h3>
-            <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-green-600"><CheckCircle className="w-5 h-5"/>{importResult?.successCount} ردیف با موفقیت وارد شد.</div>
-                <div className="flex items-center gap-2 text-red-600"><XCircle className="w-5 h-5"/>{importResult?.errors.length} ردیف با خطا مواجه شد.</div>
+                </Table>
+                 {data.length > 5 && <p className="text-sm text-muted-foreground">... و {data.length - 5} ردیف دیگر</p>}
             </div>
-            {importResult && importResult.errors.length > 0 && (
-                <div className="max-h-60 overflow-auto border rounded-md p-4 bg-destructive/10 text-destructive">
-                    <h4 className="font-semibold mb-2">جزئیات خطاها:</h4>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                        {importResult.errors.map((err, i) => <li key={i}>{err.message}</li>)}
-                    </ul>
-                </div>
-            )}
-            <DialogFooter className="pt-4">
-                <DialogClose asChild><Button onClick={resetState}>بستن</Button></DialogClose>
-            </DialogFooter>
-          </div>
-        )}
+          )}
+
+         {step === 4 && importResults && (
+            <div className="space-y-4">
+               <p className="font-semibold">نتایج:</p>
+               {importResults.success && (!importResults.errors || importResults.errors.length === 0) ? (
+                 <div className="flex items-center text-green-600"> <CheckCircle className="ml-2 h-5 w-5" /> تمام {data.length} ردیف با موفقیت وارد شد. </div>
+               ) : (
+                 <>
+                   {importResults.results && importResults.results.length > 0 && (
+                     <p className="flex items-center text-green-600"><CheckCircle className="ml-2 h-5 w-5" /> {importResults.results.length} ردیف با موفقیت وارد شد.</p>
+                   )}
+                   {importResults.errors && importResults.errors.length > 0 && (
+                     <div className="space-y-2 pt-2">
+                       <p className="flex items-center text-red-600 font-semibold"><AlertCircle className="ml-2 h-5 w-5" /> {importResults.errors.length} ردیف با خطا مواجه شد:</p>
+                       <ul className="list-disc pr-5 space-y-1 text-sm text-red-700 max-h-40 overflow-y-auto bg-red-50 p-3 rounded-md border border-red-200">
+                         {importResults.errors.map((error, index) => (
+                           <li key={index}>{error}</li>
+                         ))}
+                       </ul>
+                     </div>
+                   )}
+                 </>
+               )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="mt-6 flex justify-between items-center pt-4 border-t">
+            <div>
+                 {(step === 2 || step === 3) && <Button variant="outline" onClick={() => setStep(step - 1)} disabled={isLoading}>قبلی</Button>}
+                 {step === 4 && <Button variant="outline" onClick={resetState} disabled={isLoading}>وارد کردن فایل جدید</Button>}
+            </div>
+            <div>
+                {step === 1 && <DialogClose asChild><Button variant="ghost">انصراف</Button></DialogClose>}
+                {step === 2 && (
+                    <>
+                        <DialogClose asChild><Button variant="ghost" disabled={isLoading}>انصراف</Button></DialogClose>
+                        <Button onClick={handleProceedToPreview} disabled={!isMappingComplete || isLoading}>
+                            ادامه <ArrowRight className="mr-2 h-4 w-4"/>
+                        </Button>
+                    </>
+                )}
+                {step === 3 && (
+                    <>
+                        <Button variant="ghost" onClick={() => setStep(2)} disabled={isLoading}>ویرایش نگاشت</Button>
+                        <Button onClick={handleImport} disabled={isLoading || data.length === 0}>
+                            {isLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
+                            وارد کردن نهایی ({data.length} ردیف)
+                        </Button>
+                    </>
+                )}
+                {step === 4 && <Button onClick={closeModal}>بستن</Button>}
+            </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -1,40 +1,71 @@
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '../../../integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Search, UserPlus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Plus, Trash2, Pencil, Search, Upload, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ExcelImportDialog } from './ExcelImportDialog';
-import { useSortableData } from '@/hooks/use-sortable-data';
+import { useSortableData, SortConfig } from '@/hooks/use-sortable-data'; // Import hook and type
 
-interface Teacher {
-  id: string;
+interface TeacherProfile {
+  id: string; // profile id
+  full_name: string;
+  username: string;
+  email: string | null;
+}
+interface TeacherRecord {
+  id: string; // teacher id
   profile_id: string;
-  profiles: {
-    full_name: string;
-    username: string;
-    email: string | null;
-  };
+  profiles: TeacherProfile | null; // Join result can be null
 }
 
+const teacherImportFields = {
+  required: {
+    full_name: "نام کامل*",
+    username: "نام کاربری*",
+    email: "ایمیل*",
+    password: "رمز عبور*",
+  },
+  optional: {},
+};
+
+// Helper component for Sortable Headers
+const SortableHeader = ({ sortKey, children, sortConfig, requestSort }: { sortKey: string, children: React.ReactNode, sortConfig: SortConfig<TeacherRecord> | null, requestSort: (key: string) => void }) => {
+    const isSorted = sortConfig?.key === sortKey;
+    const direction = isSorted ? sortConfig?.direction : null;
+    const icon = !isSorted
+        ? <ArrowUpDown className="ml-2 h-4 w-4 opacity-30 group-hover:opacity-100" />
+        : direction === 'ascending'
+        ? <ArrowUp className="ml-2 h-4 w-4 text-primary" />
+        : <ArrowDown className="ml-2 h-4 w-4 text-primary" />;
+    return <Button variant="ghost" onClick={() => requestSort(sortKey)} className="group px-1 py-1 h-auto -ml-2">{children}{icon}</Button>
+};
+
+
 const TeachersManagement = () => {
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true); // General loading state
-  const [actionLoading, setActionLoading] = useState(false); // Loading state specific to add/edit/delete actions
+  const [teachers, setTeachers] = useState<TeacherRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [editingTeacher, setEditingTeacher] = useState<TeacherRecord | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Form state
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Search state
   const [searchTerm, setSearchTerm] = useState('');
 
-  const { items: sortedItems, requestSort, sortConfig } = useSortableData(teachers, { key: 'profiles.full_name', direction: 'ascending' });
+  // Use the sortable hook
+  const { items: sortedTeachers, requestSort, sortConfig } = useSortableData<TeacherRecord>(teachers, { key: 'profiles.full_name', direction: 'ascending' });
+
 
   useEffect(() => {
     fetchTeachers();
@@ -44,307 +75,322 @@ const TeachersManagement = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('teachers')
-      .select('*, profiles(full_name, username, email)');
+      .select('id, profile_id, profiles(id, full_name, username, email)');
 
     if (error) {
       toast.error('خطا در بارگذاری معلم‌ها: ' + error.message);
     } else {
-      setTeachers((data as Teacher[]) || []);
+      setTeachers((data as TeacherRecord[]) || []);
     }
     setLoading(false);
   };
 
-  const handleAddOrEditTeacher = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setActionLoading(true); // Start action loading
+  const handleAddOrEditTeacher = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setIsSubmitting(true);
 
-    if (editingTeacher) {
-      // Logic for editing an existing teacher's profile (Only full_name is editable here)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ full_name: fullName })
-        .eq('id', editingTeacher.profile_id);
+    let profileData: Partial<TeacherProfile> = {
+      full_name: fullName,
+    };
 
-      if (profileError) {
-        toast.error('خطا در ویرایش پروفایل: ' + profileError.message);
-        setActionLoading(false); // Stop loading on error
-        return;
-      }
-      toast.success('معلم با موفقیت ویرایش شد');
-    } else {
-      // Use Edge Function for adding a new teacher
-      const { data, error } = await supabase.functions.invoke<{
-        success: boolean;
-        successCount?: number;
-        errors?: string[];
-        results?: any[];
-      }>('bulk-signup', {
-        body: {
-          userType: 'teacher',
-          users: [{
+    try {
+      if (editingTeacher && editingTeacher.profile_id) {
+        // --- Edit existing teacher ---
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update(profileData)
+          .eq('id', editingTeacher.profile_id);
+
+        if (profileError) throw profileError;
+
+        toast.success('اطلاعات معلم با موفقیت ویرایش شد');
+
+      } else {
+        // --- Add new teacher using Edge Function ---
+        const teacherData = {
             email,
             password,
-            full_name: fullName,
-            username: username,
-          }]
-        },
-      });
+            options: {
+                data: {
+                    full_name: fullName,
+                    username: username,
+                    role: 'teacher'
+                }
+            },
+            teacher_info: {} // For potential future teacher-specific data
+        };
 
-      if (error || !data || !data.success) {
-        // --- MODIFICATION: Display more specific error from Edge Function ---
-        const errorMsgFromServer = data?.errors && data.errors.length > 0 ? data.errors[0] : null;
-        const finalErrorMsg = errorMsgFromServer || error?.message || 'خطای ناشناخته در افزودن معلم';
-        toast.error(`خطا در افزودن معلم: ${finalErrorMsg}`);
-        // --- END MODIFICATION ---
-        console.error("Add Teacher Error:", error, data);
-        setActionLoading(false); // Stop loading on error
-        return;
+        const { data: result, error: functionError } = await supabase.functions.invoke('bulk-signup', {
+          // Pass data in the expected format for the Edge Function (even for single user)
+          body: { users: [teacherData], userType: 'teacher' }, // Specify userType
+        });
+
+        if (functionError) throw functionError;
+
+        if (result.errors && result.errors.length > 0) {
+           toast.error(`خطا در افزودن معلم: ${result.errors[0]}`);
+        } else {
+           toast.success('معلم با موفقیت اضافه شد. لطفاً ایمیل تایید را چک کند.');
+        }
       }
-      toast.success('معلم با موفقیت اضافه شد.');
+
+      setOpen(false);
+      resetForm();
+      fetchTeachers(); // Refresh list
+    } catch (error: any) {
+      console.error("Add/Edit teacher error:", error);
+      toast.error(`خطا: ${error.message || 'عملیات ناموفق بود'}`);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setActionLoading(false); // Stop loading on success
-    setOpen(false);
-    resetForm();
-    await fetchTeachers(); // Refresh list
-  };
-
-  const handleTeacherImport = async (importedData: any[]) => {
-      const users = importedData.map(row => ({
-          email: row.email,
-          password: String(row.password),
-          full_name: row.full_name,
-          username: row.username,
-      }));
-
-      setActionLoading(true); // Indicate loading for import
-      const { data, error } = await supabase.functions.invoke<{
-          success: boolean;
-          successCount?: number;
-          errors?: string[];
-          results?: any[];
-      }>('bulk-signup', {
-          body: {
-            userType: 'teacher',
-            users
-          }
-      });
-      setActionLoading(false);
-
-      if (error || !data) {
-          const errorMsg = error?.message || "خطای سرور ناشناخته در وارد کردن معلم‌ها";
-          toast.error(`خطا در وارد کردن: ${errorMsg}`);
-          console.error("Import Error (Invoke):", error);
-          return { success: false, errors: [errorMsg] };
-      }
-
-      // Display results summary
-      let message = `${data.successCount || 0} معلم با موفقیت وارد شد.`;
-      if (data.errors && data.errors.length > 0) {
-          message += ` ${data.errors.length} خطا رخ داد.`;
-          const firstErrors = data.errors.slice(0, 3).join('; ');
-          toast.error(`خطا در وارد کردن برخی معلم‌ها.`, { description: firstErrors + (data.errors.length > 3 ? ' ... (مشاهده کنسول برای جزئیات)' : '') });
-          console.error("Import Errors (Details):", data.errors);
-      } else {
-          toast.success(message);
-      }
-
-      await fetchTeachers();
-      return { success: data.success && (!data.errors || data.errors.length === 0), errors: data.errors || [] };
   };
 
 
-  const handleDeleteTeacher = async (teacher: Teacher) => {
-    // **Simpler (but less robust) approach: Delete profile and teacher record only**
-    setActionLoading(true);
-    // 1. Delete teacher record
-    const { error: teacherDeleteError } = await supabase.from('teachers').delete().eq('profile_id', teacher.profile_id);
+  const handleDeleteTeacher = async (teacherId: string, profileId: string) => {
+    // Note: Deleting the auth user requires an admin-privileged server-side operation (Edge Function)
+    const { error: teacherDeleteError } = await supabase
+      .from('teachers')
+      .delete()
+      .eq('id', teacherId);
+
     if (teacherDeleteError) {
-        toast.error('خطا در حذف رکورد معلم: ' + teacherDeleteError.message);
-        setActionLoading(false);
-        return;
-    }
-    // 2. Delete profile record
-    const { error: profileDeleteError } = await supabase.from('profiles').delete().eq('id', teacher.profile_id);
-    if (profileDeleteError) {
-        toast.error('خطا در حذف پروفایل معلم (رکورد معلم حذف شد): ' + profileDeleteError.message);
-        setActionLoading(false);
-        fetchTeachers(); // Refresh anyway
-        return;
+      toast.error('خطا در حذف رکورد معلم: ' + teacherDeleteError.message);
+      return;
     }
 
-     // TODO: Implement a secure server-side method (Edge Function or RPC) for deleting auth.users
-     toast.success(`پروفایل و رکورد معلم (${teacher.profiles.full_name}) حذف شد.`);
-     setActionLoading(false);
-     fetchTeachers();
+    const { error: profileDeleteError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', profileId);
+
+    if (profileDeleteError) {
+       toast.error('رکورد معلم حذف شد اما پروفایل حذف نشد: ' + profileDeleteError.message);
+    } else {
+      toast.success('معلم و پروفایل مرتبط حذف شدند.');
+    }
+    fetchTeachers(); // Refresh the list
   };
 
-  const openEditDialog = (teacher: Teacher) => {
+  const openEditModal = (teacher: TeacherRecord) => {
     setEditingTeacher(teacher);
-    setFullName(teacher.profiles.full_name);
-    setUsername(teacher.profiles.username);
-    setEmail(teacher.profiles.email || '');
-    setPassword('');
+    setFullName(teacher.profiles?.full_name || '');
+    setUsername(teacher.profiles?.username || '');
+    setEmail(teacher.profiles?.email || '');
+    setPassword(''); // Clear password field for editing
+    setOpen(true);
+  };
+
+  const openAddModal = () => {
+    setEditingTeacher(null);
+    resetForm();
     setOpen(true);
   };
 
   const resetForm = () => {
-    setEditingTeacher(null);
     setFullName('');
     setUsername('');
     setEmail('');
     setPassword('');
+    setEditingTeacher(null);
   };
 
-  const filteredTeachers = useMemo(() => {
-    if (!sortedItems) return [];
+  // --- Excel Import Logic ---
+  const handleTeacherImport = async (dataToImport: Record<string, any>[]) => {
+    setIsLoading(true);
+    const usersToSignup = dataToImport.map(item => ({
+        email: item.email,
+        password: String(item.password),
+        options: {
+            data: {
+                full_name: item.full_name,
+                username: item.username,
+                role: 'teacher'
+            }
+        },
+         teacher_info: {}
+    }));
+
+    const { data: result, error: functionError } = await supabase.functions.invoke('bulk-signup', {
+      body: { users: usersToSignup, userType: 'teacher' }, // Specify userType
+    });
+
+    setIsLoading(false);
+
+    if (functionError) {
+        console.error("Edge function error:", functionError);
+        return { success: false, errors: [`خطا در ارتباط با سرور: ${functionError.message}`] };
+    }
+    if (result.errors && result.errors.length > 0) {
+        console.error("Bulk signup errors:", result.errors);
+        return { success: false, errors: result.errors };
+    }
+
+    fetchTeachers(); // Refresh teacher list on success
+    return { success: true, results: result.results || [] };
+  };
+
+   // --- Excel Template Generation ---
+   const generateTeacherTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      Object.values(teacherImportFields.required) // Use display names for headers
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "معلمان");
+    XLSX.writeFile(wb, "teachers_template.xlsx");
+  };
+
+  // --- Filtering Logic ---
+   const filteredTeachers = useMemo(() => {
+    if (!sortedTeachers) return [];
     const lowerSearchTerm = searchTerm.toLowerCase();
-    return sortedItems.filter(teacher =>
-      teacher.profiles && (
-          teacher.profiles.full_name?.toLowerCase().includes(lowerSearchTerm) ||
-          teacher.profiles.username?.toLowerCase().includes(lowerSearchTerm) ||
-          (teacher.profiles.email || '').toLowerCase().includes(lowerSearchTerm)
-      )
+    return sortedTeachers.filter(teacher =>
+      teacher.profiles?.full_name.toLowerCase().includes(lowerSearchTerm) ||
+      teacher.profiles?.username.toLowerCase().includes(lowerSearchTerm) ||
+      teacher.profiles?.email?.toLowerCase().includes(lowerSearchTerm)
     );
-  }, [sortedItems, searchTerm]);
+  }, [sortedTeachers, searchTerm]);
 
-  const SortableHeader = ({ sortKey, children }: { sortKey: string, children: React.ReactNode }) => {
-    const isSorted = sortConfig?.key === sortKey;
-    const direction = sortConfig?.direction;
-    const icon = !isSorted
-        ? <ArrowUpDown className="mr-2 h-4 w-4 opacity-50" />
-        : direction === 'ascending'
-        ? <ArrowUp className="mr-2 h-4 w-4" />
-        : <ArrowDown className="mr-2 h-4 w-4" />;
-    return <Button variant="ghost" onClick={() => requestSort(sortKey)}>{children}{icon}</Button>
-  };
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex-1">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
             <CardTitle>مدیریت معلم‌ها</CardTitle>
-            <CardDescription>افزودن، ویرایش، حذف و جستجوی معلم‌ها</CardDescription>
+            <CardDescription>افزودن، ویرایش، حذف و وارد کردن دسته‌جمعی معلم‌ها</CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex w-full sm:w-auto gap-2">
             <ExcelImportDialog
-              triggerButton={<Button variant="outline" className="gap-2 flex-grow sm:flex-grow-0" disabled={actionLoading}><UserPlus className="w-4 h-4" />وارد کردن از فایل</Button>}
-              requiredFields={{
-                full_name: "نام کامل",
-                username: "نام کاربری",
-                email: "ایمیل",
-                password: "رمز عبور"
-              }}
-              onImport={handleTeacherImport}
-              templateFileName="teachers-template.xlsx"
+                requiredFields={teacherImportFields.required}
+                optionalFields={teacherImportFields.optional}
+                onImport={handleTeacherImport}
+                templateGenerator={generateTeacherTemplate}
+                entityName="معلم"
             />
-            <Dialog open={open} onOpenChange={(isOpen) => { setOpen(isOpen); if (!isOpen) resetForm(); }}>
-              <DialogTrigger asChild><Button className="gap-2 flex-grow sm:flex-grow-0" disabled={actionLoading}><Plus className="w-4 h-4" />افزودن معلم</Button></DialogTrigger>
-              <DialogContent dir="rtl">
-                <DialogHeader><DialogTitle>{editingTeacher ? 'ویرایش معلم' : 'افزودن معلم جدید'}</DialogTitle></DialogHeader>
-                <form onSubmit={handleAddOrEditTeacher} className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">نام و نام خانوادگی</Label>
-                    <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required disabled={actionLoading} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">ایمیل</Label>
-                    <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required={!editingTeacher} disabled={!!editingTeacher || actionLoading} dir="ltr" className="text-left"/>
-                    {editingTeacher && <p className="text-xs text-muted-foreground">ایمیل قابل ویرایش نیست.</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="username">نام کاربری</Label>
-                    <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} required={!editingTeacher} disabled={!!editingTeacher || actionLoading} />
-                     {editingTeacher && <p className="text-xs text-muted-foreground">نام کاربری قابل ویرایش نیست.</p>}
-                  </div>
-                  {!editingTeacher && (
-                    <div className="space-y-2">
-                      <Label htmlFor="password">رمز عبور</Label>
-                      <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} disabled={actionLoading} />
-                      <p className="text-xs text-muted-foreground">حداقل ۶ کاراکتر.</p>
-                    </div>
-                  )}
-                  <Button type="submit" className="w-full" disabled={actionLoading}>
-                    {actionLoading ? 'در حال پردازش...' : (editingTeacher ? 'ویرایش اطلاعات' : 'افزودن معلم')}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={openAddModal} className="gap-2">
+              <Plus className="w-4 h-4" />
+              افزودن معلم
+            </Button>
           </div>
         </div>
-        <div className="relative mt-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="جستجوی معلم (نام، کاربری، ایمیل)..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 w-full"
-            dir="rtl"
-          />
+         <div className="relative mt-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="جستجو بر اساس نام، نام کاربری یا ایمیل..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+              dir="rtl"
+            />
         </div>
       </CardHeader>
       <CardContent>
-        {loading && teachers.length === 0 ? (
-          <div className="text-center py-8">در حال بارگذاری...</div>
+        {loading ? (
+          <div className="text-center py-8"><Loader2 className="mx-auto h-8 w-8 animate-spin text-primary"/></div>
         ) : (
-          <div className="overflow-x-auto border rounded-md">
-            <Table dir="rtl">
-              <TableHeader>
+          <Table dir="rtl">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-right"><SortableHeader sortKey="profiles.full_name" sortConfig={sortConfig} requestSort={requestSort}>نام</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="profiles.username" sortConfig={sortConfig} requestSort={requestSort}>نام کاربری</SortableHeader></TableHead>
+                <TableHead className="text-right"><SortableHeader sortKey="profiles.email" sortConfig={sortConfig} requestSort={requestSort}>ایمیل</SortableHeader></TableHead>
+                <TableHead className="text-right">عملیات</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTeachers.length === 0 ? (
                 <TableRow>
-                  <TableHead className="text-right whitespace-nowrap"><SortableHeader sortKey="profiles.full_name">نام</SortableHeader></TableHead>
-                  <TableHead className="text-right whitespace-nowrap"><SortableHeader sortKey="profiles.username">نام کاربری</SortableHeader></TableHead>
-                  <TableHead className="text-right whitespace-nowrap"><SortableHeader sortKey="profiles.email">ایمیل</SortableHeader></TableHead>
-                  <TableHead className="text-right whitespace-nowrap w-[100px]">عملیات</TableHead>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    هیچ معلمی یافت نشد
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTeachers.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">هیچ معلمی یافت نشد.</TableCell></TableRow>
-                ) : (
-                  filteredTeachers.map((teacher) => (
-                    teacher.profiles && (
-                      <TableRow key={teacher.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">{teacher.profiles.full_name}</TableCell>
-                        <TableCell>{teacher.profiles.username}</TableCell>
-                        <TableCell dir="ltr" className="text-right">{teacher.profiles.email || '-'}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-2">
-                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openEditDialog(teacher)} aria-label={`ویرایش ${teacher.profiles.full_name}`} disabled={actionLoading}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="icon" className="h-8 w-8" aria-label={`حذف ${teacher.profiles.full_name}`} disabled={actionLoading}>
-                                  <Trash2 className="h-4 w-4" />
+              ) : (
+                filteredTeachers.map((teacher) => (
+                  <TableRow key={teacher.id}>
+                    <TableCell>{teacher.profiles?.full_name || 'نامشخص'}</TableCell>
+                    <TableCell>{teacher.profiles?.username || '-'}</TableCell>
+                    <TableCell dir="ltr" className="text-right">{teacher.profiles?.email || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditModal(teacher)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                    <Trash2 className="w-4 h-4" />
                                 </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent dir="rtl">
+                            </AlertDialogTrigger>
+                             <AlertDialogContent dir="rtl">
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>آیا از حذف مطمئن هستید؟</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                      این عمل پروفایل و رکورد معلم ({teacher.profiles.full_name}) را حذف می‌کند. این عمل ممکن است قابل بازگشت نباشد. (کاربر Auth ممکن است باقی بماند).
-                                  </AlertDialogDescription>
+                                <AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    این عمل معلم و پروفایل مرتبط را حذف می‌کند، اما کاربر احراز هویت شده باقی می‌ماند (نیاز به حذف دستی یا از طریق تابع سروری دارد). آیا از حذف مطمئن هستید؟
+                                </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>انصراف</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDeleteTeacher(teacher)} className="bg-destructive hover:bg-destructive/90">
+                                <AlertDialogCancel>انصراف</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteTeacher(teacher.id, teacher.profile_id)}>
                                     حذف
-                                  </AlertDialogAction>
+                                </AlertDialogAction>
                                 </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                            </AlertDialogContent>
+                        </AlertDialog>
+
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         )}
       </CardContent>
+
+      {/* Add/Edit Dialog */}
+       <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) resetForm(); setOpen(isOpen); }}>
+        <DialogContent dir="rtl">
+            <DialogHeader>
+            <DialogTitle>{editingTeacher ? 'ویرایش معلم' : 'افزودن معلم جدید'}</DialogTitle>
+            <DialogDescription>
+                {editingTeacher ? 'اطلاعات معلم را ویرایش کنید.' : 'اطلاعات معلم جدید را وارد کنید.'}
+            </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleAddOrEditTeacher} className="space-y-4 pt-4">
+            <div className="space-y-2">
+                <Label htmlFor="fullName">نام و نام خانوادگی*</Label>
+                <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required dir="rtl"/>
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="email">ایمیل*</Label>
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required={!editingTeacher} disabled={!!editingTeacher} dir="ltr" className="text-left"/>
+                 {editingTeacher && <p className="text-xs text-muted-foreground">ایمیل قابل ویرایش نیست.</p>}
+            </div>
+            <div className="space-y-2">
+                <Label htmlFor="username">نام کاربری*</Label>
+                <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} required={!editingTeacher} disabled={!!editingTeacher} dir="rtl"/>
+                 {editingTeacher && <p className="text-xs text-muted-foreground">نام کاربری قابل ویرایش نیست.</p>}
+            </div>
+            {!editingTeacher && (
+                <div className="space-y-2">
+                <Label htmlFor="password">رمز عبور*</Label>
+                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} dir="rtl" />
+                </div>
+            )}
+            <DialogFooter className="pt-4">
+                 <DialogClose asChild><Button type="button" variant="ghost" disabled={isSubmitting}>انصراف</Button></DialogClose>
+                 <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
+                    {editingTeacher ? 'ویرایش' : 'افزودن'}
+                 </Button>
+            </DialogFooter>
+            </form>
+        </DialogContent>
+       </Dialog>
     </Card>
   );
 };
