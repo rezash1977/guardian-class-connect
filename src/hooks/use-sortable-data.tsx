@@ -34,7 +34,7 @@ interface SortConfig<T> {
   direction: 'ascending' | 'descending';
 }
 
-export let useSortableData = <T>(items: T[] | null | undefined, config: SortConfig<T> | null = null) => {
+export const useSortableData = <T>(items: T[] | null | undefined, config: SortConfig<T> | null = null) => {
   const [sortConfig, setSortConfig] = useState<SortConfig<T> | null>(config);
 
   const sortedItems = useMemo(() => {
