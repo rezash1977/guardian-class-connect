@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useAuth } from '@/lib/auth'; // <-- Correctly uses the updated useAuth
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+// ... other imports ...
+import { LogOut, School, CheckCircle, XCircle, Clock, AlertTriangle, Calendar as CalendarIcon, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { format, parseISO } from "date-fns-jalali";
+import { cn } from "@/lib/utils";
+import faIR from 'date-fns-jalali/locale/fa-IR';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,16 +18,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from 'sonner';
-import { LogOut, School, CheckCircle, XCircle, Clock, AlertTriangle, Calendar as CalendarIcon, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
-import { format, parseISO } from "date-fns-jalali";
-import { cn } from "@/lib/utils";
-import {faIR} from "date-fns-jalali/locale/fa-IR";
 
 
-const formatted = format(new Date(), "PPP", { locale: faIR });
-
-
-// Interface definitions
+// ... (interfaces remain the same) ...
 interface ClassSubject {
   id: string;
   classes: {
@@ -51,10 +49,24 @@ interface DisciplineRecord {
 }
 
 // Represents the status selected in the UI
-type AttendanceUiStatus = Record<string, 'present' | 'absent' | 'late'>; // Default to present, no 'undefined'
+type AttendanceUiStatus = Record<string, 'present' | 'absent' | 'late'>;
 
+const toPersianDigits = (num: string) => num.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+
+const safeFormatDate = (dateString: string | null | undefined, formatString: string) => {
+  if (!dateString) return '-';
+  try {
+    const dateObj = parseISO(dateString);
+    const formatted = format(dateObj, formatString);
+    return toPersianDigits(formatted);
+  } catch (e) {
+    console.error("Error parsing date:", dateString, e);
+    return 'تاریخ نامعتبر';
+  }
+};
 const TeacherDashboard = () => {
-  const { signOut, user } = useAuth();
+  // *** Use the profile from the updated useAuth ***
+  const { signOut, user, profile, loading: authLoading } = useAuth();
   const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([]);
   const [selectedClassSubjectId, setSelectedClassSubjectId] = useState<string | undefined>();
   const [students, setStudents] = useState<Student[]>([]);
@@ -75,9 +87,16 @@ const TeacherDashboard = () => {
   const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // *** Get teacher's full name directly from profile ***
+  const teacherName = profile?.full_name;
+
   useEffect(() => {
-    fetchTeacherClassSubjects();
-  }, [user]);
+    // Fetch class subjects only when user data is loaded and user exists
+    if (!authLoading && user) {
+        fetchTeacherClassSubjects();
+    }
+  }, [user, authLoading]); // Depend on authLoading as well
+
 
   const selectedClass = useMemo(() => {
     return classSubjects.find(cs => cs.id === selectedClassSubjectId)?.classes;
@@ -95,107 +114,125 @@ const TeacherDashboard = () => {
   }, [selectedClass]);
 
   useEffect(() => {
-    // Only fetch/set defaults if we have the necessary info AND students
     if (selectedClassSubjectId && date && lessonPeriod && students.length > 0) {
       fetchAttendanceAndSetDefault();
     } else {
-       setAttendanceUiStatus({}); // Clear status if context changes or no students
+       setAttendanceUiStatus({});
     }
-  }, [selectedClassSubjectId, date, lessonPeriod, students]); // students is crucial here
+  }, [selectedClassSubjectId, date, lessonPeriod, students]);
 
 
   const fetchTeacherClassSubjects = async () => {
     if (!user) return;
     setLoadingClassSubjects(true);
-    const { data: teacherData, error: teacherError } = await supabase
-      .from('teachers')
-      .select('id')
-      .eq('profile_id', user.id)
-      .single();
+    try {
+        const { data: teacherData, error: teacherError } = await supabase
+          .from('teachers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
 
-    if (teacherError || !teacherData) {
-      toast.error("خطا در یافتن اطلاعات معلم");
-      setLoadingClassSubjects(false);
-      return;
+        if (teacherError) throw teacherError;
+        if (!teacherData) throw new Error("اطلاعات معلم یافت نشد.");
+
+
+        const { data, error } = await supabase
+          .from('class_subjects')
+          .select('id, classes(id, name, grade), subjects(name)')
+          .eq('teacher_id', teacherData.id);
+
+        if (error) throw error;
+        setClassSubjects((data as ClassSubject[]) || []);
+
+    } catch (error: any) {
+         console.error("Error fetching teacher class subjects:", error);
+         toast.error(error.message || 'خطا در بارگذاری کلاس‌های معلم');
+         setClassSubjects([]); // Clear on error
+    } finally {
+        setLoadingClassSubjects(false);
     }
-
-    const { data, error } = await supabase
-      .from('class_subjects')
-      .select('id, classes(id, name, grade), subjects(name)')
-      .eq('teacher_id', teacherData.id);
-
-    if (error) toast.error('خطا در بارگذاری کلاس‌ها: ' + error.message);
-    else setClassSubjects((data as ClassSubject[]) || []);
-    setLoadingClassSubjects(false);
   };
 
   const fetchClassStudents = async (classId: string) => {
     setLoadingStudents(true);
     setAttendanceUiStatus({}); // Reset status when fetching new students
-    const { data, error } = await supabase.from('students').select('id, full_name').eq('class_id', classId);
-     if(error) {
-         toast.error("خطا در بارگذاری دانش آموزان کلاس: " + error.message);
-         setStudents([]);
-     } else {
+    try {
+        const { data, error } = await supabase.from('students').select('id, full_name').eq('class_id', classId);
+        if (error) throw error;
+
         setStudents(data || []);
-        // Initialize status to 'present' for newly fetched students AFTER setting students state
+        // Initialize status to 'present' for newly fetched students
         const initialStatus: AttendanceUiStatus = {};
         (data || []).forEach(student => {
           initialStatus[student.id] = 'present';
         });
         setAttendanceUiStatus(initialStatus);
-     }
-    setLoadingStudents(false);
+    } catch (error: any) {
+        console.error("Error fetching class students:", error);
+        toast.error(error.message || "خطا در بارگذاری دانش آموزان کلاس");
+        setStudents([]);
+    } finally {
+        setLoadingStudents(false);
+    }
   };
+
 
   const fetchAttendanceAndSetDefault = async () => {
     if (!selectedClassSubjectId || !date || !lessonPeriod || students.length === 0) return;
     setLoadingAttendance(true);
     const formattedDate = format(date, 'yyyy-MM-dd');
-    const { data: dbAttendance, error } = await supabase
-      .from('attendance')
-      .select('student_id, status')
-      .eq('class_subject_id', selectedClassSubjectId)
-      .eq('date', formattedDate)
-      .eq('lesson_period', lessonPeriod)
-      .in('status', ['absent', 'late']); // Only fetch non-present records
+    try {
+        const { data: dbAttendance, error } = await supabase
+          .from('attendance')
+          .select('student_id, status')
+          .eq('class_subject_id', selectedClassSubjectId)
+          .eq('date', formattedDate)
+          .eq('lesson_period', lessonPeriod)
+          .in('status', ['absent', 'late']);
 
-    if(error) {
-        toast.error("خطا در بارگذاری سوابق حضورغیاب: " + error.message);
+        if(error) throw error;
+
+        const dbStatusMap = dbAttendance?.reduce((acc, record) => {
+            if (record.status === 'absent' || record.status === 'late') {
+               acc[record.student_id] = record.status;
+            }
+            return acc;
+        }, {} as Record<string, 'absent' | 'late'>) || {};
+
+        const initialStatus: AttendanceUiStatus = {};
+        students.forEach(student => {
+          initialStatus[student.id] = dbStatusMap[student.id] || 'present';
+        });
+
+        setAttendanceUiStatus(initialStatus);
+    } catch (error: any) {
+         console.error("Error fetching attendance records:", error);
+         toast.error(error.message || "خطا در بارگذاری سوابق حضورغیاب");
+         // Don't reset to empty on error, keep the 'present' defaults from fetchClassStudents
+    } finally {
         setLoadingAttendance(false);
-        return;
     }
-
-    const dbStatusMap = dbAttendance?.reduce((acc, record) => {
-        if (record.status === 'absent' || record.status === 'late') {
-           acc[record.student_id] = record.status;
-        }
-        return acc;
-    }, {} as Record<string, 'absent' | 'late'>) || {};
-
-    // Set default 'present' and override with DB status
-    const initialStatus: AttendanceUiStatus = {};
-    students.forEach(student => {
-      initialStatus[student.id] = dbStatusMap[student.id] || 'present';
-    });
-
-    setAttendanceUiStatus(initialStatus);
-    setLoadingAttendance(false);
   };
 
-  const fetchDisciplineRecords = async (classId: string) => {
-    const { data, error } = await supabase
-        .from('discipline_records')
-        .select('id, description, severity, created_at, students(full_name)')
-        .eq('class_id', classId)
-        .order('created_at', { ascending: false });
 
-    if (error) toast.error("خطا در بارگذاری موارد انضباطی: " + error.message);
-    else setDisciplineRecords(data as DisciplineRecord[] || []);
+  const fetchDisciplineRecords = async (classId: string) => {
+    try {
+        const { data, error } = await supabase
+            .from('discipline_records')
+            .select('id, description, severity, created_at, students(full_name)')
+            .eq('class_id', classId)
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        setDisciplineRecords(data as DisciplineRecord[] || []);
+    } catch (error: any) {
+        console.error("Error fetching discipline records:", error);
+        toast.error(error.message || "خطا در بارگذاری موارد انضباطی");
+        setDisciplineRecords([]);
+    }
   };
 
  const handleAttendanceSubmit = async () => {
-    if (!selectedClassSubjectId || !date || !lessonPeriod || students.length === 0) {
+     if (!selectedClassSubjectId || !date || !lessonPeriod || students.length === 0) {
       toast.error('لطفاً کلاس، تاریخ، ساعت درسی را انتخاب کنید و منتظر بارگذاری دانش‌آموزان بمانید.');
       return;
     }
@@ -243,8 +280,7 @@ const TeacherDashboard = () => {
         toast.error(error.message || 'خطا در ثبت حضور و غیاب.');
     } finally {
         setIsSubmitting(false);
-         // Refetch to confirm state after submission
-         await fetchAttendanceAndSetDefault();
+         // No need to refetch, state should be accurate unless error occurred
     }
 };
 
@@ -289,11 +325,14 @@ const TeacherDashboard = () => {
   };
 
   const handleDeleteDiscipline = async (recordId: string) => {
-      const { error } = await supabase.from('discipline_records').delete().eq('id', recordId);
-      if(error) toast.error("خطا در حذف مورد انضباطی: " + error.message);
-      else {
+      try {
+          const { error } = await supabase.from('discipline_records').delete().eq('id', recordId);
+          if (error) throw error;
           toast.success("مورد انضباطی حذف شد.");
           if (selectedClass) fetchDisciplineRecords(selectedClass.id);
+      } catch(error: any) {
+          console.error("Error deleting discipline record:", error);
+          toast.error("خطا در حذف مورد انضباطی: " + error.message);
       }
   }
 
@@ -317,33 +356,38 @@ const TeacherDashboard = () => {
     setSeverity('low');
   }
 
-  // *** Updated updateStudentStatus with toggle logic ***
   const updateStudentStatus = (studentId: string, clickedStatus: 'present' | 'absent' | 'late') => {
-      setAttendanceUiStatus(prev => {
+       setAttendanceUiStatus(prev => {
           const currentStatus = prev[studentId];
           let nextStatus: 'present' | 'absent' | 'late';
 
           if (clickedStatus === 'present') {
-              nextStatus = 'present'; // Clicking present always makes it present
+              nextStatus = 'present';
           } else if (currentStatus === clickedStatus) {
-              nextStatus = 'present'; // Clicking the same non-present status reverts to present
+              nextStatus = 'present';
           } else {
-              nextStatus = clickedStatus; // Clicking a different non-present status selects it
+              nextStatus = clickedStatus;
           }
 
           return { ...prev, [studentId]: nextStatus };
       });
   };
 
-   // Helper to safely format date
   const safeFormatDate = (dateString: string | null | undefined, formatString: string) => {
     if (!dateString) return '-';
     try {
+        // Ensure dateString is treated correctly (ISO 8601 or YYYY-MM-DD)
         const dateObj = parseISO(dateString);
         return format(dateObj, formatString, { locale: faIR });
     } catch (e) {
-        console.error("Error parsing date:", dateString, e);
-        return 'تاریخ نامعتبر';
+        // Fallback for potential simple YYYY/MM/DD if parseISO fails unexpectedly
+        try {
+            const simpleDate = new Date(dateString.replace(/-/g, '/'));
+             return format(simpleDate, formatString, { locale: faIR });
+        } catch (e2){
+            console.error("Error parsing date:", dateString, e2);
+            return 'تاریخ نامعتبر';
+        }
     }
   };
 
@@ -354,9 +398,14 @@ const TeacherDashboard = () => {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center"><School className="w-6 h-6 text-primary-foreground" /></div>
-            <div><h1 className="text-2xl font-bold">پنل معلم</h1><p className="text-sm text-muted-foreground">ثبت حضور و غیاب و موارد انضباطی</p></div>
+            <div>
+              <h1 className="text-2xl font-bold">پنل معلم</h1>
+              {teacherName && <p className="text-sm text-muted-foreground"><b><i>{teacherName}</i></b> عزیز به پنل مدیریت هنرستان آل محمد ص خوش آمدید</p>}
+              {!teacherName && !authLoading && <p className="text-sm text-muted-foreground">ثبت حضور و غیاب و موارد انضباطی</p>}
+               {authLoading && <p className="text-sm text-muted-foreground animate-pulse">در حال بارگذاری...</p>}
+            </div>
           </div>
-          <Button onClick={signOut} variant="outline" className="gap-2"><LogOut className="w-4 h-4" />خروج</Button>
+          <Button onClick={signOut} variant="destructive" className="gap-2"><LogOut className="w-4 h-4" />خروج</Button>
         </div>
       </header>
 
@@ -393,7 +442,7 @@ const TeacherDashboard = () => {
                 <div><CardTitle>ثبت حضور و غیاب</CardTitle><CardDescription>وضعیت غایبین و تاخیر را مشخص کنید (پیش‌فرض: حاضر)</CardDescription></div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                      <Button disabled={isSubmitting || loadingStudents || loadingAttendance}>
+                      <Button disabled={isSubmitting || loadingStudents || loadingAttendance || students.length === 0}>
                           {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : null}
                           {isSubmitting ? 'در حال ثبت...' : 'ثبت حضور و غیاب'}
                       </Button>
@@ -412,13 +461,12 @@ const TeacherDashboard = () => {
                 <TableHeader><TableRow><TableHead className="text-right">نام دانش‌آموز</TableHead><TableHead className="text-right w-[240px]">وضعیت</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {students.map((student) => {
-                    const currentStatus = attendanceUiStatus[student.id] || 'present'; // Ensure default is present
+                    const currentStatus = attendanceUiStatus[student.id] || 'present';
                     return (
                         <TableRow key={student.id}>
                           <TableCell>{student.full_name}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              {/* Use updated updateStudentStatus function */}
                               <Button size="sm" variant={currentStatus === 'present' ? 'default' : 'outline'} onClick={() => updateStudentStatus(student.id, 'present')} className="gap-1 flex-1"><CheckCircle className="w-4 h-4" />حاضر</Button>
                               <Button size="sm" variant={currentStatus === 'absent' ? 'destructive' : 'outline'} onClick={() => updateStudentStatus(student.id, 'absent')} className="gap-1 flex-1"><XCircle className="w-4 h-4" />غایب</Button>
                               <Button size="sm" variant={currentStatus === 'late' ? 'secondary' : 'outline'} onClick={() => updateStudentStatus(student.id, 'late')} className="gap-1 flex-1"><Clock className="w-4 h-4" />تأخیر</Button>
@@ -440,7 +488,7 @@ const TeacherDashboard = () => {
                 <div className="flex items-center justify-between">
                     <div><CardTitle>موارد انضباطی</CardTitle><CardDescription>موارد انضباطی ثبت شده برای کلاس {selectedClass.name}</CardDescription></div>
                     <Dialog open={disciplineOpen} onOpenChange={(isOpen) => { setDisciplineOpen(isOpen); if (!isOpen) resetDisciplineForm(); }}>
-                      <DialogTrigger asChild><Button variant="outline" className="gap-2"><Plus className="w-4 h-4" />ثبت مورد جدید</Button></DialogTrigger>
+                      <DialogTrigger asChild><Button variant="outline" className="gap-2" disabled={students.length === 0}><Plus className="w-4 h-4" />ثبت مورد جدید</Button></DialogTrigger>
                       <DialogContent dir="rtl">
                         <DialogHeader>
                           <DialogTitle>{editingDiscipline ? 'ویرایش مورد انضباطی' : 'ثبت مورد انضباطی'}</DialogTitle>
@@ -452,7 +500,7 @@ const TeacherDashboard = () => {
                           <div className="space-y-2"><Label>شدت</Label><Select value={severity} onValueChange={setSeverity}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">کم</SelectItem><SelectItem value="medium">متوسط</SelectItem><SelectItem value="high">شدید</SelectItem></SelectContent></Select></div>
                            <DialogFooter className="pt-4">
                                 <DialogClose asChild><Button type="button" variant="ghost" disabled={isSubmitting}>انصراف</Button></DialogClose>
-                                <Button type="submit" disabled={isSubmitting}>
+                                <Button type="submit" disabled={isSubmitting || !selectedStudentId}> {/* Disable if no student selected for new entry */}
                                      {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
                                      {editingDiscipline ? "ویرایش" : "ثبت"}
                                 </Button>
@@ -472,7 +520,7 @@ const TeacherDashboard = () => {
                                   <TableCell>{rec.students?.full_name || 'نامشخص'}</TableCell>
                                   <TableCell>{rec.description}</TableCell>
                                   <TableCell><Badge variant={rec.severity === 'high' ? 'destructive' : rec.severity === 'medium' ? 'secondary' : 'default'}>{rec.severity === "low" ? "کم" : rec.severity === "medium" ? "متوسط" : "شدید"}</Badge></TableCell>
-                                  <TableCell>{safeFormatDate(rec.created_at, 'yyyy/MM/dd')}</TableCell>
+                                  <TableCell>{rec.created_at?.at|| null}</TableCell>
                                   <TableCell><div className="flex gap-2">
                                       <Button variant="outline" size="sm" onClick={() => openDisciplineDialog(rec)}><Pencil className="w-4 h-4"/></Button>
                                       <AlertDialog>

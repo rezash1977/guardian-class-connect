@@ -52,6 +52,7 @@ const justificationTranslations: Record<string, string> = {
 };
 
 
+
 const AttendanceReports = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);

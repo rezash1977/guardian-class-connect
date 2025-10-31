@@ -1,54 +1,49 @@
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { DayPicker } from "react-day-picker";
-import { faIR } from 'date-fns/locale';
+import DatePicker, { DayValue } from "@hassanmojab/react-modern-calendar-datepicker";
+import "@hassanmojab/react-modern-calendar-datepicker/lib/DatePicker.css";
 
-import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+// Keep the existing export name `Calendar` so other components don't need to change.
+export type CalendarProps = {
+  mode?: "single" | "range";
+  selected?: Date | undefined;
+  onSelect?: (date?: Date) => void;
+  // allow passing className for wrapper styling
+  className?: string;
+};
 
-export type CalendarProps = React.ComponentProps<typeof DayPicker>;
+function dateToDayValue(d: Date): DayValue {
+  return { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear() } as DayValue;
+}
 
-function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+function dayValueToDate(v: DayValue | null | undefined): Date | undefined {
+  if (!v || typeof v === "boolean") return undefined;
+  // DayValue is an object like { day, month, year }
+  // Some typings allow arrays for range mode; we only handle single mode here.
+  const maybe = v as { day?: number; month?: number; year?: number };
+  if (maybe.day == null || maybe.month == null || maybe.year == null) return undefined;
+  return new Date(maybe.year, maybe.month - 1, maybe.day);
+}
+
+function Calendar({ mode = "single", selected, onSelect, className }: CalendarProps) {
+  const selectedValue = selected ? dateToDayValue(selected) : null;
+
   return (
-    <DayPicker
-      locale={faIR}
-      showOutsideDays={showOutsideDays}
-      className={cn("p-3", className)}
-      classNames={{
-        months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center",
-        caption_label: "text-sm font-medium",
-        nav: "space-x-1 flex items-center",
-        nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
-        ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
-        table: "w-full border-collapse space-y-1",
-        head_row: "flex",
-        head_cell: "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]",
-        row: "flex w-full mt-2",
-        cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
-        day: cn(buttonVariants({ variant: "ghost" }), "h-9 w-9 p-0 font-normal aria-selected:opacity-100"),
-        day_range_end: "day-range-end",
-        day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
-        day_outside:
-          "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
-        day_disabled: "text-muted-foreground opacity-50",
-        day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
-        day_hidden: "invisible",
-        ...classNames,
-      }}
-      components={{
-        IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
-      }}
-      {...props}
-    />
+    <div className={className}>
+      <DatePicker
+        value={selectedValue}
+        onChange={(v) => {
+          const converted = dayValueToDate(v as DayValue | null | undefined);
+          onSelect?.(converted);
+        }}
+        // keep the calendar in single or range mode based on prop
+        inputPlaceholder=""
+        shouldHighlightWeekends
+        calendarPopperPosition="bottom"
+        // the library accepts `calendar` prop `calendarClassName` etc.; keep defaults
+        // We intentionally don't render the input — consumers use a Popover trigger button.
+        renderInput={() => null}
+      />
+    </div>
   );
 }
 Calendar.displayName = "Calendar";

@@ -3,16 +3,23 @@ import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Users, GraduationCap, School, FileText, AlertTriangle, Book } from 'lucide-react';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { faIR } from 'date-fns/locale';
 import TeachersManagement from './admin/TeachersManagement';
 import ClassesManagement from './admin/ClassesManagement';
 import StudentsManagement from './admin/StudentsManagement';
 import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
 import SubjectsManagement from './admin/SubjectsManagement';
+const toPersianDigits = (num: string) => num.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+
 
 const AdminDashboard = () => {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('teachers');
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
   // Define background and icon colors for tabs
   const tabStyles = {
@@ -37,10 +44,22 @@ const AdminDashboard = () => {
               <p className="text-sm text-muted-foreground">هنرستان آل محمد ص</p>
             </div>
           </div>
-          <Button onClick={signOut} variant="destructive" className="gap-2">
-            <LogOut className="w-4 h-4" />
-            خروج
-          </Button>
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    {selectedDate ? toPersianDigits(format(selectedDate, 'PPP', { locale: faIR })) : 'انتخاب تاریخ'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} />
+                </PopoverContent>
+              </Popover>
+              <Button onClick={signOut} variant="destructive" className="gap-2">
+                <LogOut className="w-4 h-4" />
+                خروج
+              </Button>
+            </div>
         </div>
       </header>
 

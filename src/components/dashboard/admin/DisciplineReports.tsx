@@ -44,6 +44,16 @@ const severityTranslations: Record<SeverityLevel, string> = {
     high: 'شدید'
 };
 // --- END MODIFICATION ---
+const safeFormatDate = (dateString?: string, pattern = 'yyyy/MM/dd') => {
+  if (!dateString) return 'نامشخص'; // اگر تاریخ نامشخص باشد، "نامشخص" نشان بده
+  const parsed = new Date(dateString); // تلاش برای تبدیل به تاریخ
+  if (isNaN(parsed.getTime())) return 'نامشخص'; // اگر تاریخ نامعتبر بود، "نامشخص" بازگشت بده
+  try {
+    return format(parsed, pattern); // تاریخ معتبر را فرمت کن
+  } catch {
+    return 'نامشخص'; // اگر خطای دیگری رخ داد، "نامشخص" بازگشت بده
+  }
+};
 
 const DisciplineReports = () => {
   const [records, setRecords] = useState<DisciplineRecord[]>([]);
@@ -95,7 +105,8 @@ const DisciplineReports = () => {
       const nameMatch = record.students?.full_name?.toLowerCase().includes(searchTermLower) ?? false;
       const classMatch = filterClassId === 'all' || record.classes?.id === filterClassId;
       // Compare the date part only
-      const recordDateStr = record.created_at ? format(parse(record.created_at, "yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx", new Date()), 'yyyy-MM-dd') : null;
+      const recordDateStr = record.created_at ? safeFormatDate(record.created_at, 'yyyy-MM-dd') : null;
+
       const filterDateStr = date ? format(date, 'yyyy-MM-dd') : null;
       const dateMatch = !date || (recordDateStr && filterDateStr && recordDateStr === filterDateStr);
 
@@ -127,7 +138,8 @@ const DisciplineReports = () => {
             'کلاس': record.classes?.name || 'نامشخص',
             'شرح': record.description,
             'شدت': severityTranslations[record.severity as SeverityLevel] || record.severity, // Translate severity
-            'تاریخ ثبت': record.created_at ? format(parse(record.created_at, "yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx", new Date()), 'yyyy/MM/dd HH:mm') : 'نامشخص',
+'تاریخ ثبت': record.created_at ? safeFormatDate(record.created_at, 'yyyy/MM/dd HH:mm') : 'نامشخص',
+
             'ثبت توسط': record.profiles?.full_name || 'نامشخص',
         }));
         // ... rest of the export function remains the same ...
@@ -240,7 +252,8 @@ const DisciplineReports = () => {
                     <TableCell>{record.classes?.name || 'نامشخص'}</TableCell>
                     <TableCell>{record.description}</TableCell>
                     <TableCell>{getSeverityBadge(record.severity)}</TableCell>
-                    <TableCell>{format(parse(record.created_at, "yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx", new Date()), 'yyyy/MM/dd')}</TableCell> {/* Parse before format */}
+                    <TableCell>{safeFormatDate(record.created_at, 'yyyy/MM/dd HH:mm')}</TableCell>
+
                     <TableCell>{record.profiles?.full_name || 'نامشخص'}</TableCell>
                     {/* --- MODIFICATION: Added Edit Button Cell --- */}
                     <TableCell>
@@ -266,7 +279,8 @@ const DisciplineReports = () => {
                   <DialogDescription>
                       ویرایش مورد ثبت شده برای دانش آموز "{editingDisciplineRecord?.students?.full_name}"
                       در کلاس "{editingDisciplineRecord?.classes?.name}"
-                      ({editingDisciplineRecord?.created_at ? format(parse(editingDisciplineRecord.created_at, "yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx", new Date()), 'yyyy/MM/dd') : ''}).
+({editingDisciplineRecord?.created_at ? safeFormatDate(editingDisciplineRecord.created_at, 'yyyy/MM/dd') : ''})
+
                   </DialogDescription>
               </DialogHeader>
               <div className="py-4 space-y-4">

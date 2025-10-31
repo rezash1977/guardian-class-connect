@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'; // Import Textarea for just
 import { toast } from 'sonner';
 import { LogOut, User, Upload, Eye, Loader2 } from 'lucide-react';
 import { format } from "date-fns-jalali";
+import { safeFormatDate, toPersianDigits } from "@/utils/dateUtils";
 
 // Interface definitions reflecting the provided schema
 interface Student {
@@ -359,7 +360,7 @@ const handleUploadCertificate = async () => {
                       {attendance.length === 0 ? (<TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">هیچ سابقه‌ای یافت نشد</TableCell></TableRow>) : ( // Adjusted colSpan
                         attendance.map((record) => (
                           <TableRow key={record.id}>
-                            <TableCell>{record.date ? format(new Date(record.date.replace(/-/g, '/')), 'yyyy/MM/dd') : ''}</TableCell>
+                            <TableCell>{safeFormatDate(record.date, "dd/MM/yy")}</TableCell>
                             <TableCell>{record.lesson_period}</TableCell>
                             <TableCell>{record.class_subjects?.subjects?.name || '-'}</TableCell>
                             <TableCell>{getStatusBadge(record.status, record.is_justified)}</TableCell>
