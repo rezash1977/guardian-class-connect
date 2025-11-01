@@ -17,9 +17,13 @@ export type Database = {
       attendance: {
         Row: {
           class_id: string
+          class_subject_id: string | null
           created_at: string | null
           date: string
           id: string
+          is_justified: boolean | null
+          lesson_period: number | null
+          medical_certificate_url: string | null
           recorded_by: string | null
           status: string
           student_id: string
@@ -27,9 +31,13 @@ export type Database = {
         }
         Insert: {
           class_id: string
+          class_subject_id?: string | null
           created_at?: string | null
           date?: string
           id?: string
+          is_justified?: boolean | null
+          lesson_period?: number | null
+          medical_certificate_url?: string | null
           recorded_by?: string | null
           status: string
           student_id: string
@@ -37,9 +45,13 @@ export type Database = {
         }
         Update: {
           class_id?: string
+          class_subject_id?: string | null
           created_at?: string | null
           date?: string
           id?: string
+          is_justified?: boolean | null
+          lesson_period?: number | null
+          medical_certificate_url?: string | null
           recorded_by?: string | null
           status?: string
           student_id?: string
@@ -54,6 +66,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "attendance_class_subject_id_fkey"
+            columns: ["class_subject_id"]
+            isOneToOne: false
+            referencedRelation: "class_subjects"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "attendance_recorded_by_fkey"
             columns: ["recorded_by"]
             isOneToOne: false
@@ -65,6 +84,52 @@ export type Database = {
             columns: ["student_id"]
             isOneToOne: false
             referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      class_subjects: {
+        Row: {
+          class_id: string
+          created_at: string | null
+          id: string
+          subject_id: string
+          teacher_id: string | null
+        }
+        Insert: {
+          class_id: string
+          created_at?: string | null
+          id?: string
+          subject_id: string
+          teacher_id?: string | null
+        }
+        Update: {
+          class_id?: string
+          created_at?: string | null
+          id?: string
+          subject_id?: string
+          teacher_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_subjects_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_subjects_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_subjects_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "teachers"
             referencedColumns: ["id"]
           },
         ]
@@ -221,6 +286,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      subjects: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
       }
       teachers: {
         Row: {
