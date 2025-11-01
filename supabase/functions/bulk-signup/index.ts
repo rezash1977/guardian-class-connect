@@ -33,9 +33,10 @@ Deno.serve(async (req) => {
      console.log("[Bulk Signup] Initializing Supabase admin client...");
      supabaseAdmin = getSupabaseAdminClient();
      console.log("[Bulk Signup] Supabase admin client initialized successfully.");
-  } catch (initError) {
+  } catch (initError: unknown) {
       console.error("[Bulk Signup] Error initializing Supabase client:", initError);
-      return new Response(JSON.stringify({ success: false, error: initError.message, errors: [initError.message] }), {
+      const errorMsg = initError instanceof Error ? initError.message : String(initError);
+      return new Response(JSON.stringify({ success: false, error: errorMsg, errors: [errorMsg] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500, // Internal Server Error due to config issue
       });
@@ -178,10 +179,11 @@ Deno.serve(async (req) => {
         successCount++;
         console.log(`${logPrefix} Successfully processed.`);
 
-      } catch (userError) {
+      } catch (userError: unknown) {
         // --- Error handling & Rollback for the current user ---
         console.error(`${logPrefix} Error during processing:`, userError);
-        errors.push(userError.message); // Add specific error
+        const errorMsg = userError instanceof Error ? userError.message : String(userError);
+        errors.push(errorMsg); // Add specific error
 
         if (userId) { // Only attempt rollback if auth user was actually created
           console.warn(`${logPrefix} Attempting rollback for failed process (Auth User ID: ${userId})`);
@@ -193,9 +195,10 @@ Deno.serve(async (req) => {
             } else {
               console.log(`${logPrefix} Rolled back auth user ${userId} successfully.`);
             }
-          } catch (rollbackException) {
-            console.error(`${logPrefix} CRITICAL: Exception during rollback for auth user ${userId}: ${rollbackException.message}`);
-            errors.push(`(ردیف ${rowIndex}: ${email}) - استثنا در حین بازگردانی عملیات: ${rollbackException.message}`);
+          } catch (rollbackException: unknown) {
+            const rollbackMsg = rollbackException instanceof Error ? rollbackException.message : String(rollbackException);
+            console.error(`${logPrefix} CRITICAL: Exception during rollback for auth user ${userId}: ${rollbackMsg}`);
+            errors.push(`(ردیف ${rowIndex}: ${email}) - استثنا در حین بازگردانی عملیات: ${rollbackMsg}`);
           }
         } else {
           console.log(`${logPrefix} No rollback needed as Auth User was not created or creation failed.`);
@@ -216,13 +219,14 @@ Deno.serve(async (req) => {
       status: 200,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     // --- General Function Error (e.g., JSON parsing, initial validation) ---
     console.error("[Bulk Signup] General Edge Function Error:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
     return new Response(JSON.stringify({
       success: false,
-      error: `خطای کلی در فانکشن: ${error.message}`,
-      errors: [error.message]
+      error: `خطای کلی در فانکشن: ${errorMsg}`,
+      errors: [errorMsg]
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: error instanceof SyntaxError ? 400 : 500, // 400 for bad request, 500 for others
