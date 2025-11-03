@@ -22,20 +22,18 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('email')
         .eq('username', username)
         .maybeSingle();
 
-      if (profileError || !profile?.email) {
-        toast.error('نام کاربری یا رمز عبور اشتباه است');
-        setLoading(false);
-        return;
-      }
+      // Prevent username enumeration: always attempt auth with a fallback email
+      const fallbackEmail = `nonexistent+${Math.random().toString(36).slice(2, 8)}@example.com`;
+      const emailToUse = profile?.email ?? fallbackEmail;
 
       const { error } = await supabase.auth.signInWithPassword({
-        email: profile.email,
+        email: emailToUse,
         password,
       });
 
