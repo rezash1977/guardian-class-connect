@@ -22,31 +22,51 @@ const Login = () => {
     setLoading(true);
 
     try {
+      if (!username || !password) {
+        toast.error('لطفاً نام کاربری و رمز عبور را وارد کنید');
+        return;
+      }
+
+      // First check if user exists in profiles
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('email')
         .eq('username', username)
         .maybeSingle();
 
-      if (profileError || !profile?.email) {
-        toast.error('نام کاربری یا رمز عبور اشتباه است');
-        setLoading(false);
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        toast.error('خطا در بررسی اطلاعات کاربری');
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      if (!profile?.email) {
+        toast.error('کاربری با این نام کاربری یافت نشد');
+        return;
+      }
+
+      // Then try to sign in
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password,
       });
 
-      if (error) {
-        toast.error('نام کاربری یا رمز عبور اشتباه است');
+      if (signInError) {
+        console.error('Sign in error:', signInError);
+        if (signInError.message.includes('Invalid login credentials')) {
+          toast.error('رمز عبور اشتباه است');
+        } else {
+          toast.error('خطا در ورود: ' + signInError.message);
+        }
+      } else if (!data.user) {
+        toast.error('خطا در دریافت اطلاعات کاربری');
       } else {
         toast.success('ورود موفقیت‌آمیز بود');
         navigate('/dashboard');
       }
     } catch (error) {
-      toast.error('خطا در ورود');
+      console.error('Unexpected error during login:', error);
+      toast.error('خطای غیرمنتظره در ورود');
     } finally {
       setLoading(false);
     }

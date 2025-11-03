@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Calendar as CalendarIcon, ArrowUpDown, ArrowUp, ArrowDown, FileDown, Pencil } from 'lucide-react';
+import { Search, Calendar as CalendarIcon, ArrowUpDown, ArrowUp, ArrowDown, FileDown, Pencil, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox'; // Added Checkbox
@@ -51,6 +51,13 @@ const justificationTranslations: Record<string, string> = {
     na: '-' // Not applicable or not absent
 };
 
+// Helpers to convert digits to/from Persian numerals
+const persianDigits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+const toPersianDigits = (input: string) => String(input).replace(/\d/g, (d) => persianDigits[Number(d)]);
+const persianToEnglish = (s: string) => {
+  if (!s) return '';
+  return s.replace(/[۰-۹]/g, (d) => String(persianDigits.indexOf(d as any)) ).replace(/[^0-9]/g, '');
+};
 
 
 const AttendanceReports = () => {
@@ -64,6 +71,8 @@ const AttendanceReports = () => {
   const [date, setDate] = useState<Date | undefined>();
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterJustification, setFilterJustification] = useState<string>('all'); // 'all', 'justified', 'unjustified'
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(100);
 
   // Edit Dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -87,8 +96,8 @@ const AttendanceReports = () => {
       .from('attendance')
       .select('id, date, status, is_justified, lesson_period, students(full_name), class_subjects(classes(id, name), subjects(name)), profiles(full_name)');
 
-    if (error) toast.error('خطا در بارگذاری گزارش‌ها: ' + error.message);
-    else setRecords((data as AttendanceRecord[]) || []);
+  if (error) toast.error('خطا در بارگذاری گزارش‌ها: ' + error.message);
+  else setRecords((data as unknown as AttendanceRecord[]) || []);
     setLoading(false);
   };
 
@@ -114,6 +123,17 @@ const AttendanceReports = () => {
       return studentNameMatch && classMatch && dateMatch && statusMatch && justificationMatch;
     });
   }, [sortedItems, searchTerm, filterClassId, date, filterStatus, filterJustification]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, filterClassId, date, filterStatus, filterJustification, sortedItems?.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+  const paginatedRecords = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, page]);
 
 
   const getStatusBadge = (status: string) => {
@@ -274,7 +294,7 @@ const AttendanceReports = () => {
             </TableHeader>
             <TableBody>
               {filteredRecords.length === 0 ? <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">هیچ سابقه‌ای یافت نشد</TableCell></TableRow> : (
-                filteredRecords.map((record) => (
+                paginatedRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>{record.students?.full_name || 'نامشخص'}</TableCell>
                     <TableCell>{record.class_subjects?.classes?.name || 'نامشخص'}</TableCell>
@@ -297,6 +317,48 @@ const AttendanceReports = () => {
           </Table>
         )}
       </CardContent>
+
+      {/* Pagination controls: Persian pager */}
+      {filteredRecords.length > 0 && (
+        <div className="flex items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}><ChevronLeft className="w-4 h-4" /></Button>
+            <div className="flex items-center gap-2 border rounded-md px-2 py-1 bg-background/50">
+              <span className="text-sm">صفحه</span>
+              <input
+                type="text"
+                aria-label="page"
+                value={toPersianDigits(String(page))}
+                onChange={(e) => {
+                  const eng = persianToEnglish(e.target.value);
+                  const n = eng ? Math.max(1, Math.min(totalPages, parseInt(eng, 10))) : 1;
+                  setPage(isNaN(n) ? 1 : n);
+                }}
+                className="w-12 text-center bg-transparent outline-none text-sm"
+              />
+              <span className="text-sm">از</span>
+              <span className="text-sm font-medium">{toPersianDigits(String(totalPages))}</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}><ChevronRight className="w-4 h-4" /></Button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Select value={String(pageSize)} onValueChange={(value) => {
+              setPageSize(Number(value));
+              setPage(1); // Reset to first page when changing page size
+            }}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="20">۲۰ ردیف</SelectItem>
+                <SelectItem value="50">۵۰ ردیف</SelectItem>
+                <SelectItem value="100">۱۰۰ ردیف</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="text-sm text-muted-foreground">{toPersianDigits(String(filteredRecords.length))} رکورد</div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Attendance Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

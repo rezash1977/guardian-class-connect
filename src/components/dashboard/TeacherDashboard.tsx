@@ -43,7 +43,11 @@ interface DisciplineRecord {
   description: string;
   severity: string;
   created_at: string;
+  recorded_by: string;
   students: {
+    full_name: string;
+  } | null;
+  profiles?: {
     full_name: string;
   } | null;
 }
@@ -217,11 +221,18 @@ const TeacherDashboard = () => {
 
   const fetchDisciplineRecords = async (classId: string) => {
     try {
+        if (!user?.id) {
+            console.error("No user ID available");
+            return;
+        }
+
         const { data, error } = await supabase
             .from('discipline_records')
-            .select('id, description, severity, created_at, students(full_name)')
+            .select('id, description, severity, created_at, recorded_by, students(full_name), profiles(full_name)')
             .eq('class_id', classId)
+            .eq('recorded_by', user.id)
             .order('created_at', { ascending: false });
+            
         if (error) throw error;
         setDisciplineRecords(data as DisciplineRecord[] || []);
     } catch (error: any) {
@@ -324,8 +335,14 @@ const TeacherDashboard = () => {
     }
   };
 
-  const handleDeleteDiscipline = async (recordId: string) => {
+  const handleDeleteDiscipline = async (recordId: string, recordedBy: string) => {
       try {
+          // Check if the current user is the creator of the record
+          if (recordedBy !== user?.id) {
+              toast.error("شما اجازه حذف این مورد انضباطی را ندارید");
+              return;
+          }
+
           const { error } = await supabase.from('discipline_records').delete().eq('id', recordId);
           if (error) throw error;
           toast.success("مورد انضباطی حذف شد.");
@@ -337,14 +354,21 @@ const TeacherDashboard = () => {
   }
 
   const openDisciplineDialog = (record: DisciplineRecord | null) => {
-    setEditingDiscipline(record);
-    if (record && record.students) {
-      const student = students.find(s => s.full_name === record.students!.full_name);
-      setSelectedStudentId(student?.id);
-      setDisciplineDesc(record.description);
-      setSeverity(record.severity);
+    if (record) {
+      // Check if the current user is the creator of the record
+      if (record.recorded_by !== user?.id) {
+        toast.error("شما اجازه ویرایش این مورد انضباطی را ندارید");
+        return;
+      }
+      setEditingDiscipline(record);
+      if (record.students) {
+        const student = students.find(s => s.full_name === record.students!.full_name);
+        setSelectedStudentId(student?.id);
+        setDisciplineDesc(record.description);
+        setSeverity(record.severity);
+      }
     } else {
-        resetDisciplineForm();
+      resetDisciplineForm();
     }
     setDisciplineOpen(true);
   }
@@ -400,9 +424,8 @@ const TeacherDashboard = () => {
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center"><School className="w-6 h-6 text-primary-foreground" /></div>
             <div>
               <h1 className="text-2xl font-bold">پنل معلم</h1>
-              {teacherName && <p className="text-sm text-muted-foreground"><b><i>{teacherName}</i></b> عزیز به پنل مدیریت هنرستان آل محمد ص خوش آمدید</p>}
-              {!teacherName && !authLoading && <p className="text-sm text-muted-foreground">ثبت حضور و غیاب و موارد انضباطی</p>}
-               {authLoading && <p className="text-sm text-muted-foreground animate-pulse">در حال بارگذاری...</p>}
+              {teacherName && <p className="text-sm text-muted-foreground mt-1">{teacherName}</p>}
+              {authLoading && <p className="text-sm text-muted-foreground animate-pulse mt-1">در حال بارگذاری...</p>}
             </div>
           </div>
           <Button onClick={signOut} variant="destructive" className="gap-2"><LogOut className="w-4 h-4" />خروج</Button>
@@ -467,7 +490,7 @@ const TeacherDashboard = () => {
                           <TableCell>{student.full_name}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              <Button size="sm" variant={currentStatus === 'present' ? 'default' : 'outline'} onClick={() => updateStudentStatus(student.id, 'present')} className="gap-1 flex-1"><CheckCircle className="w-4 h-4" />حاضر</Button>
+                              
                               <Button size="sm" variant={currentStatus === 'absent' ? 'destructive' : 'outline'} onClick={() => updateStudentStatus(student.id, 'absent')} className="gap-1 flex-1"><XCircle className="w-4 h-4" />غایب</Button>
                               <Button size="sm" variant={currentStatus === 'late' ? 'secondary' : 'outline'} onClick={() => updateStudentStatus(student.id, 'late')} className="gap-1 flex-1"><Clock className="w-4 h-4" />تأخیر</Button>
                             </div>
@@ -479,6 +502,21 @@ const TeacherDashboard = () => {
               </Table>
              }
             </CardContent>
+            <div className="flex items-center justify-between">
+                <div><CardTitle></CardTitle></div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                      <Button disabled={isSubmitting || loadingStudents || loadingAttendance || students.length === 0}>
+                          {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : null}
+                          {isSubmitting ? 'در حال ثبت...' : 'ثبت حضور و غیاب'}
+                      </Button>
+                    </AlertDialogTrigger>
+                  <AlertDialogContent dir="rtl">
+                    <AlertDialogHeader><AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle><AlertDialogDescription>با این کار، سوابق قبلی حضور و غیاب برای این کلاس، تاریخ و ساعت درسی بازنویسی خواهد شد و فقط غایبین و تاخیر ثبت می‌شوند.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogFooter><AlertDialogCancel>انصراف</AlertDialogCancel><AlertDialogAction onClick={handleAttendanceSubmit}>تایید و ثبت</AlertDialogAction></AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
           </Card>
         )}
 
@@ -486,7 +524,7 @@ const TeacherDashboard = () => {
           <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                    <div><CardTitle>موارد انضباطی</CardTitle><CardDescription>موارد انضباطی ثبت شده برای کلاس {selectedClass.name}</CardDescription></div>
+                    <div><CardTitle>موارد انضباطی</CardTitle><CardDescription>موارد انضباطی ثبت شده توسط شما برای کلاس {selectedClass.name}</CardDescription></div>
                     <Dialog open={disciplineOpen} onOpenChange={(isOpen) => { setDisciplineOpen(isOpen); if (!isOpen) resetDisciplineForm(); }}>
                       <DialogTrigger asChild><Button variant="outline" className="gap-2" disabled={students.length === 0}><Plus className="w-4 h-4" />ثبت مورد جدید</Button></DialogTrigger>
                       <DialogContent dir="rtl">
@@ -520,16 +558,20 @@ const TeacherDashboard = () => {
                                   <TableCell>{rec.students?.full_name || 'نامشخص'}</TableCell>
                                   <TableCell>{rec.description}</TableCell>
                                   <TableCell><Badge variant={rec.severity === 'high' ? 'destructive' : rec.severity === 'medium' ? 'secondary' : 'default'}>{rec.severity === "low" ? "کم" : rec.severity === "medium" ? "متوسط" : "شدید"}</Badge></TableCell>
-                                  <TableCell>{rec.created_at?.at|| null}</TableCell>
+                                  <TableCell>{format(parseISO(rec.created_at), 'yyyy/MM/dd')}</TableCell>
                                   <TableCell><div className="flex gap-2">
-                                      <Button variant="outline" size="sm" onClick={() => openDisciplineDialog(rec)}><Pencil className="w-4 h-4"/></Button>
-                                      <AlertDialog>
-                                        <AlertDialogTrigger asChild><Button variant="destructive" size="sm"><Trash2 className="w-4 h-4"/></Button></AlertDialogTrigger>
-                                        <AlertDialogContent dir="rtl">
-                                            <AlertDialogHeader><AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle><AlertDialogDescription>این عمل قابل بازگشت نیست.</AlertDialogDescription></AlertDialogHeader>
-                                            <AlertDialogFooter><AlertDialogCancel>انصراف</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteDiscipline(rec.id)}>حذف</AlertDialogAction></AlertDialogFooter>
-                                        </AlertDialogContent>
-                                      </AlertDialog>
+                                      {rec.recorded_by === user?.id && (
+                                          <>
+                                              <Button variant="outline" size="sm" onClick={() => openDisciplineDialog(rec)}><Pencil className="w-4 h-4"/></Button>
+                                              <AlertDialog>
+                                                  <AlertDialogTrigger asChild><Button variant="destructive" size="sm"><Trash2 className="w-4 h-4"/></Button></AlertDialogTrigger>
+                                                  <AlertDialogContent dir="rtl">
+                                                      <AlertDialogHeader><AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle><AlertDialogDescription>این عمل قابل بازگشت نیست.</AlertDialogDescription></AlertDialogHeader>
+                                                      <AlertDialogFooter><AlertDialogCancel>انصراف</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteDiscipline(rec.id, rec.recorded_by)}>حذف</AlertDialogAction></AlertDialogFooter>
+                                                  </AlertDialogContent>
+                                              </AlertDialog>
+                                          </>
+                                      )}
                                   </div></TableCell>
                               </TableRow>
                           ))}

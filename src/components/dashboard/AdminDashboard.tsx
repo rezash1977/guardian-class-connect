@@ -45,16 +45,7 @@ const AdminDashboard = () => {
             </div>
           </div>
             <div className="flex items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    {selectedDate ? toPersianDigits(format(selectedDate, 'PPP', { locale: faIR })) : 'انتخاب تاریخ'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} />
-                </PopoverContent>
-              </Popover>
+              
               <Button onClick={signOut} variant="destructive" className="gap-2">
                 <LogOut className="w-4 h-4" />
                 خروج
