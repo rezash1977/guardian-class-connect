@@ -28,15 +28,18 @@ const Login = () => {
       }
 
       // First check if user exists in profiles
+      console.debug('Login: fetching profile for username', username);
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('email')
         .eq('username', username)
         .maybeSingle();
 
+      console.debug('Login: profile response', { profile, profileError });
+
       if (profileError) {
         console.error('Error fetching profile:', profileError);
-        toast.error('خطا در بررسی اطلاعات کاربری');
+        toast.error('خطا در بررسی اطلاعات کاربری: ' + (profileError.message ?? profileError.toString()));
         return;
       }
 
@@ -46,24 +49,33 @@ const Login = () => {
       }
 
       // Then try to sign in
+      console.debug('Login: attempting signInWithPassword for', profile.email);
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password,
       });
 
+      console.debug('Login: sign-in response', { data, signInError });
+
       if (signInError) {
         console.error('Sign in error:', signInError);
-        if (signInError.message.includes('Invalid login credentials')) {
+        const msg = signInError?.message ?? JSON.stringify(signInError);
+        if (typeof msg === 'string' && msg.includes('Invalid login credentials')) {
           toast.error('رمز عبور اشتباه است');
         } else {
-          toast.error('خطا در ورود: ' + signInError.message);
+          toast.error('خطا در ورود: ' + msg);
         }
-      } else if (!data.user) {
-        toast.error('خطا در دریافت اطلاعات کاربری');
-      } else {
-        toast.success('ورود موفقیت‌آمیز بود');
-        navigate('/dashboard');
+        return;
       }
+
+      if (!data?.user) {
+        console.error('Sign in succeeded but no user object returned', data);
+        toast.error('خطا در دریافت اطلاعات کاربری پس از ورود');
+        return;
+      }
+
+      toast.success('ورود موفقیت‌آمیز بود');
+      navigate('/dashboard');
     } catch (error) {
       console.error('Unexpected error during login:', error);
       toast.error('خطای غیرمنتظره در ورود');

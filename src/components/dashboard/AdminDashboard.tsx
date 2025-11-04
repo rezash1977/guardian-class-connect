@@ -12,6 +12,7 @@ import ClassesManagement from './admin/ClassesManagement';
 import StudentsManagement from './admin/StudentsManagement';
 import AttendanceReports from './admin/AttendanceReports';
 import DisciplineReports from './admin/DisciplineReports';
+import EvaluationsReports from './admin/EvaluationsReports';
 import SubjectsManagement from './admin/SubjectsManagement';
 const toPersianDigits = (num: string) => num.replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
@@ -29,6 +30,7 @@ const AdminDashboard = () => {
     students: { bg: 'bg-orange-100 dark:bg-orange-900', iconColor: 'text-orange-600 dark:text-orange-300' },
     attendance: { bg: 'bg-indigo-100 dark:bg-indigo-900', iconColor: 'text-indigo-600 dark:text-indigo-300' },
     discipline: { bg: 'bg-red-100 dark:bg-red-900', iconColor: 'text-red-600 dark:text-red-300' },
+    evaluations: { bg: 'bg-emerald-100 dark:bg-emerald-900', iconColor: 'text-emerald-600 dark:text-emerald-300' },
   };
 
   return (
@@ -95,6 +97,12 @@ const AdminDashboard = () => {
                 <span className="text-foreground text-xs sm:text-sm">موارد انضباطی</span>
               </div>
             </TabsTrigger>
+            <TabsTrigger value="evaluations" className="p-0 data-[state=active]:shadow-lg data-[state=active]:ring-2 data-[state=active]:ring-primary rounded-lg focus-visible:ring-offset-0 focus-visible:ring-2 focus-visible:ring-ring">
+              <div className={`flex flex-col sm:flex-row items-center justify-center gap-2 p-3 rounded-md shadow-md w-full h-full ${tabStyles.evaluations.bg}`}>
+                <FileText className={`w-4 h-4 ${tabStyles.evaluations.iconColor}`} />
+                <span className="text-foreground text-xs sm:text-sm">ارزشیابی</span>
+              </div>
+            </TabsTrigger>
             {/* --- END MODIFICATION --- */}
           </TabsList>
 
@@ -104,6 +112,7 @@ const AdminDashboard = () => {
           <TabsContent value="students"><StudentsManagement /></TabsContent>
           <TabsContent value="attendance"><AttendanceReports /></TabsContent>
           <TabsContent value="discipline"><DisciplineReports /></TabsContent>
+              <TabsContent value="evaluations"><EvaluationsReports /></TabsContent>
         </Tabs>
       </main>
     </div>

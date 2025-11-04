@@ -46,12 +46,22 @@ interface DisciplineRecord {
   } | null;
 }
 
+interface EvaluationRecordParent {
+  id: string;
+  date: string;
+  homework_done: boolean;
+  class_score: number | null;
+  notes: string | null;
+  classes?: { name: string } | null;
+}
+
 const ParentDashboard = () => {
   const { signOut, user } = useAuth();
   const [children, setChildren] = useState<Student[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | undefined>();
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [discipline, setDiscipline] = useState<DisciplineRecord[]>([]);
+  const [evaluations, setEvaluations] = useState<EvaluationRecordParent[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(true);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [loadingDiscipline, setLoadingDiscipline] = useState(false);
@@ -76,11 +86,29 @@ const ParentDashboard = () => {
     if (selectedChildId) {
       fetchAttendance();
       fetchDiscipline();
+      fetchEvaluations();
     } else {
       setAttendance([]);
       setDiscipline([]);
     }
   }, [selectedChildId]);
+
+  const fetchEvaluations = async () => {
+    if (!selectedChildId) return;
+    try {
+      const { data, error } = await supabase
+        .from('evaluations')
+        .select('id, date, homework_done, class_score, notes, classes(name)')
+        .eq('student_id', selectedChildId)
+        .order('date', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setEvaluations(data || []);
+    } catch (err: any) {
+      console.error('Error fetching evaluations for parent:', err);
+      setEvaluations([]);
+    }
+  };
 
   const fetchChildren = async () => {
     setLoadingChildren(true);
@@ -417,6 +445,28 @@ const handleUploadCertificate = async () => {
                           </TableRow>
                         ))
                       )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle>ارزشیابی‌ها</CardTitle><CardDescription>ارزشیابی‌های ثبت شده برای {selectedChild.full_name}</CardDescription></CardHeader>
+              <CardContent>
+                {evaluations.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground">هیچ ارزشیابی‌ای یافت نشد.</div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead className="text-right">تاریخ</TableHead><TableHead className="text-right">تکلیف</TableHead><TableHead className="text-right">نمره</TableHead><TableHead className="text-right">توضیحات</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {evaluations.map(ev => (
+                        <TableRow key={ev.id}>
+                          <TableCell>{ev.date}</TableCell>
+                          <TableCell>{ev.homework_done ? 'بله' : 'خیر'}</TableCell>
+                          <TableCell>{ev.class_score ?? '-'}</TableCell>
+                          <TableCell>{ev.notes ?? '-'}</TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 )}

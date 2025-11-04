@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { LogOut, School, CheckCircle, XCircle, Clock, AlertTriangle, Calendar as CalendarIcon, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { format, parseISO } from "date-fns-jalali";
 import { cn } from "@/lib/utils";
-import faIR from 'date-fns-jalali/locale/fa-IR';
+import {faIR} from 'date-fns-jalali/locale/fa-IR';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -52,6 +52,19 @@ interface DisciplineRecord {
   } | null;
 }
 
+// Evaluation record for per-student daily evaluations
+interface EvaluationRecord {
+  id?: string;
+  student_id: string;
+  class_id: string;
+  date: string; // yyyy-MM-dd
+  homework_done: boolean;
+  class_score: number | null;
+  notes: string | null;
+  recorded_by?: string | null;
+  students?: { full_name: string } | null;
+}
+
 // Represents the status selected in the UI
 type AttendanceUiStatus = Record<string, 'present' | 'absent' | 'late'>;
 
@@ -90,6 +103,11 @@ const TeacherDashboard = () => {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Evaluations state: map by student id for editing convenience
+  const [evaluationsMap, setEvaluationsMap] = useState<Record<string, EvaluationRecord>>({});
+  const [loadingEvaluations, setLoadingEvaluations] = useState(false);
+  // Keep an original snapshot to detect changes
+  const [originalEvaluationsMap, setOriginalEvaluationsMap] = useState<Record<string, EvaluationRecord>>({});
 
   // *** Get teacher's full name directly from profile ***
   const teacherName = profile?.full_name;
@@ -100,6 +118,8 @@ const TeacherDashboard = () => {
         fetchTeacherClassSubjects();
     }
   }, [user, authLoading]); // Depend on authLoading as well
+
+  // NOTE: fetchEvaluations depends on selectedClass and is declared later; effect is attached after function definition below.
 
 
   const selectedClass = useMemo(() => {
@@ -242,6 +262,58 @@ const TeacherDashboard = () => {
     }
   };
 
+  // Fetch evaluations for the selected class and date (only teacher's own evaluations)
+  const fetchEvaluations = async (classId: string, dateStr: string) => {
+    try {
+      if (!user?.id) return;
+      setLoadingEvaluations(true);
+      const { data, error } = await supabase
+        .from('evaluations')
+        .select('id, student_id, class_id, date, homework_done, class_score, notes, recorded_by, students(full_name)')
+        .eq('class_id', classId)
+        .eq('date', dateStr)
+        .eq('recorded_by', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const map: Record<string, EvaluationRecord> = {};
+      (data || []).forEach((r: any) => {
+        map[r.student_id] = {
+          id: r.id,
+          student_id: r.student_id,
+          class_id: r.class_id,
+          date: r.date,
+          homework_done: Boolean(r.homework_done),
+          class_score: r.class_score ?? null,
+          notes: r.notes ?? null,
+          recorded_by: r.recorded_by ?? null,
+          students: r.students ?? null,
+        };
+      });
+      setEvaluationsMap(map);
+      // Also keep an original snapshot for change detection
+      setOriginalEvaluationsMap(map);
+    } catch (error: any) {
+      console.error('Error fetching evaluations:', error);
+      toast.error(error.message || 'خطا در بارگذاری ارزشیابی‌ها');
+      setEvaluationsMap({});
+    } finally {
+      setLoadingEvaluations(false);
+    }
+  };
+
+  // Load evaluations when selected class or date changes
+  useEffect(() => {
+    if (selectedClass && date) {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      fetchEvaluations(selectedClass.id, dateStr);
+    } else {
+      setEvaluationsMap({});
+      setOriginalEvaluationsMap({});
+    }
+  }, [selectedClass, date]);
+
  const handleAttendanceSubmit = async () => {
      if (!selectedClassSubjectId || !date || !lessonPeriod || students.length === 0) {
       toast.error('لطفاً کلاس، تاریخ، ساعت درسی را انتخاب کنید و منتظر بارگذاری دانش‌آموزان بمانید.');
@@ -251,11 +323,11 @@ const TeacherDashboard = () => {
     const formattedDate = format(date, 'yyyy-MM-dd');
 
     try {
-        const { error: deleteError } = await supabase.from('attendance')
-            .delete()
-            .eq('class_subject_id', selectedClassSubjectId)
-            .eq('date', formattedDate)
-            .eq('lesson_period', lessonPeriod);
+    const { error: deleteError } = await supabase.from('attendance')
+      .delete()
+      .eq('class_subject_id', selectedClassSubjectId)
+      .eq('date', formattedDate)
+      .eq('lesson_period', parseInt(lessonPeriod!));
 
         if (deleteError) {
             console.error("Error deleting previous attendance:", deleteError);
@@ -276,13 +348,14 @@ const TeacherDashboard = () => {
                 justification: null,
             }));
 
-        if (recordsToInsert.length > 0) {
-            const { error: insertError } = await supabase.from('attendance').insert(recordsToInsert);
-            if (insertError) {
-                console.error("Error inserting attendance:", insertError);
-                throw new Error('خطا در ثبت حضور و غیاب: ' + insertError.message);
-            }
-        }
+    if (recordsToInsert.length > 0) {
+      // Use upsert with onConflict to avoid duplicate key errors if a record already exists.
+      const insertRes = await supabase.from('attendance').upsert(recordsToInsert, { onConflict: 'student_id,class_subject_id,date,lesson_period' });
+      if (insertRes.error) {
+        console.error("Error inserting/upserting attendance:", insertRes.error);
+        throw new Error('خطا در ثبت حضور و غیاب: ' + insertRes.error.message);
+      }
+    }
 
         toast.success(`حضور و غیاب ثبت شد (${recordsToInsert.length} مورد غیبت/تاخیر).`);
 
@@ -294,6 +367,125 @@ const TeacherDashboard = () => {
          // No need to refetch, state should be accurate unless error occurred
     }
 };
+
+  // Combined save: attendance + evaluations (only changed)
+  const handleSaveCombined = async () => {
+    if (!selectedClassSubjectId || !date || !lessonPeriod || students.length === 0) {
+      toast.error('لطفاً کلاس، تاریخ و ساعت درسی را انتخاب کنید و منتظر بارگذاری دانش‌آموزان بمانید.');
+      return;
+    }
+
+    const dateStr = format(date, 'yyyy-MM-dd');
+
+    // Prepare attendance changes (we delete previous and insert new absent/late)
+    setIsSubmitting(true);
+    setLoadingEvaluations(true);
+    try {
+      console.debug('handleSaveCombined start', { selectedClassSubjectId, dateStr, lessonPeriod, user: user?.id, studentsCount: students.length });
+      // Delete previous attendance for this class_subject/date/lesson
+      const delRes = await supabase.from('attendance')
+        .delete()
+        .eq('class_subject_id', selectedClassSubjectId)
+        .eq('date', dateStr)
+        .eq('lesson_period', parseInt(lessonPeriod));
+      console.debug('attendance delete response', delRes);
+      if (delRes.error) throw delRes.error;
+
+      const attendanceInserts = Object.entries(attendanceUiStatus)
+        .filter(([_, status]) => status === 'absent' || status === 'late')
+        .map(([studentId, status]) => ({
+          student_id: studentId,
+          class_subject_id: selectedClassSubjectId,
+          status,
+          date: dateStr,
+          lesson_period: parseInt(lessonPeriod),
+          recorded_by: user?.id,
+        }));
+
+      if (attendanceInserts.length > 0) {
+        console.debug('Upserting attendance rows', attendanceInserts);
+        const insertRes = await supabase.from('attendance').upsert(attendanceInserts, { onConflict: 'student_id,class_subject_id,date,lesson_period' });
+        console.debug('attendance upsert response', insertRes);
+        if (insertRes.error) throw insertRes.error;
+      }
+
+      // Detect changed evaluations compared to originalEvaluationsMap
+      const changed: EvaluationRecord[] = [];
+      const isDifferent = (a?: EvaluationRecord, b?: EvaluationRecord) => {
+        if (!a && !b) return false;
+        const aa = a ?? ({ homework_done: false, class_score: null, notes: null } as EvaluationRecord);
+        const bb = b ?? ({ homework_done: false, class_score: null, notes: null } as EvaluationRecord);
+        if (Boolean(aa.homework_done) !== Boolean(bb.homework_done)) return true;
+        const ascore = aa.class_score === null ? null : Number(aa.class_score);
+        const bscore = bb.class_score === null ? null : Number(bb.class_score);
+        if (ascore !== bscore) return true;
+        const anotes = aa.notes ?? '';
+        const bnotes = bb.notes ?? '';
+        if (anotes !== bnotes) return true;
+        return false;
+      };
+
+      students.forEach(s => {
+        const current = evaluationsMap[s.id];
+        const original = originalEvaluationsMap[s.id];
+        if (isDifferent(current, original)) {
+          const ev = current ?? { student_id: s.id, class_id: selectedClass!.id, date: dateStr, homework_done: false, class_score: null, notes: null } as EvaluationRecord;
+            // Build row without forcing `id` when it's undefined/null. Sending `id: null` causes
+            // a NOT NULL constraint violation if the DB expects to generate the id server-side.
+            const row: any = {
+              student_id: s.id,
+              class_id: selectedClass!.id,
+              date: dateStr,
+              homework_done: !!ev.homework_done,
+              class_score: ev.class_score ?? null,
+              notes: ev.notes ?? null,
+              recorded_by: user?.id ?? null,
+            };
+            if (ev.id) {
+              // only include id when it's present (existing record)
+              row.id = ev.id;
+            }
+            changed.push(row);
+        }
+      });
+
+      if (changed.length > 0) {
+        console.debug('Upserting evaluations', changed.slice(0, 10));
+        const upsertRes = await supabase.from('evaluations').upsert(changed, { onConflict: 'student_id,date,class_id' });
+        console.debug('evaluations upsert response', upsertRes);
+        if (upsertRes.error) {
+          // Provide richer error information
+          const err = upsertRes.error;
+          const detail = {
+            message: err.message,
+            details: (err as any).details,
+            hint: (err as any).hint,
+            code: (err as any).code,
+          };
+          console.error('Evaluations upsert failed', detail);
+          throw upsertRes.error;
+        }
+      } else {
+        console.debug('No evaluation changes to upsert');
+      }
+
+      toast.success('ثبت ترکیبی با موفقیت انجام شد');
+
+      // Refresh data
+      await Promise.all([
+        fetchAttendanceAndSetDefault(),
+        fetchEvaluations(selectedClass!.id, dateStr),
+        fetchDisciplineRecords(selectedClass!.id),
+      ]);
+
+    } catch (err: any) {
+      console.error('Error in combined save:', err);
+      toast.error(err?.message || 'خطا در ثبت اطلاعات.');
+    } finally {
+      setLoadingEvaluations(false);
+      setIsSubmitting(false);
+    }
+  };
 
 
   const handleDisciplineSubmit = async (e: React.FormEvent) => {
@@ -462,61 +654,76 @@ const TeacherDashboard = () => {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div><CardTitle>ثبت حضور و غیاب</CardTitle><CardDescription>وضعیت غایبین و تاخیر را مشخص کنید (پیش‌فرض: حاضر)</CardDescription></div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                      <Button disabled={isSubmitting || loadingStudents || loadingAttendance || students.length === 0}>
-                          {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : null}
-                          {isSubmitting ? 'در حال ثبت...' : 'ثبت حضور و غیاب'}
-                      </Button>
-                    </AlertDialogTrigger>
-                  <AlertDialogContent dir="rtl">
-                    <AlertDialogHeader><AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle><AlertDialogDescription>با این کار، سوابق قبلی حضور و غیاب برای این کلاس، تاریخ و ساعت درسی بازنویسی خواهد شد و فقط غایبین و تاخیر ثبت می‌شوند.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>انصراف</AlertDialogCancel><AlertDialogAction onClick={handleAttendanceSubmit}>تایید و ثبت</AlertDialogAction></AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <div>
+                  <CardTitle>دفتر کلاسی (یک‌جا)</CardTitle>
+                  <CardDescription>نمایش و ویرایش حضور، تکلیف، نمره کلاسی و توضیحات برای هر دانش‌آموز</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleSaveCombined} disabled={isSubmitting || loadingStudents || loadingAttendance || students.length === 0}>
+                    {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
+                    {isSubmitting ? 'در حال ثبت...' : 'ذخیره همه'}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-             {loadingStudents || loadingAttendance ? <div className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-primary"/></div> :
-             students.length === 0 ? <div className="text-center py-8 text-muted-foreground">دانش آموزی در این کلاس یافت نشد.</div> :
-              <Table>
-                <TableHeader><TableRow><TableHead className="text-right">نام دانش‌آموز</TableHead><TableHead className="text-right w-[240px]">وضعیت</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {students.map((student) => {
-                    const currentStatus = attendanceUiStatus[student.id] || 'present';
-                    return (
-                        <TableRow key={student.id}>
-                          <TableCell>{student.full_name}</TableCell>
+              {loadingStudents || loadingAttendance || loadingEvaluations ? (
+                <div className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-primary"/></div>
+              ) : students.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">دانش آموزی در این کلاس یافت نشد.</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">دانش‌آموز</TableHead>
+                      <TableHead className="text-right">حضور</TableHead>
+                      <TableHead className="text-right">تکلیف</TableHead>
+                      <TableHead className="text-right">نمره کلاسی</TableHead>
+                      <TableHead className="text-right">توضیحات</TableHead>
+                      <TableHead className="text-right">انضباط</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {students.map((s) => {
+                      const currentStatus = attendanceUiStatus[s.id] || 'present';
+                      const ev = evaluationsMap[s.id] ?? { student_id: s.id, class_id: selectedClass!.id, date: format(date, 'yyyy-MM-dd'), homework_done: false, class_score: null, notes: null } as EvaluationRecord;
+                      const disciplineCount = disciplineRecords.filter(d => d.students?.full_name === s.full_name).length;
+                      return (
+                        <TableRow key={s.id}>
+                          <TableCell>{s.full_name}</TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
-                              
-                              <Button size="sm" variant={currentStatus === 'absent' ? 'destructive' : 'outline'} onClick={() => updateStudentStatus(student.id, 'absent')} className="gap-1 flex-1"><XCircle className="w-4 h-4" />غایب</Button>
-                              <Button size="sm" variant={currentStatus === 'late' ? 'secondary' : 'outline'} onClick={() => updateStudentStatus(student.id, 'late')} className="gap-1 flex-1"><Clock className="w-4 h-4" />تأخیر</Button>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant={currentStatus === 'present' ? 'secondary' : 'outline'} onClick={() => setAttendanceUiStatus(prev => ({ ...prev, [s.id]: 'present' }))}>حاضر</Button>
+                              <Button size="sm" variant={currentStatus === 'absent' ? 'destructive' : 'outline'} onClick={() => setAttendanceUiStatus(prev => ({ ...prev, [s.id]: prev[s.id] === 'absent' ? 'present' : 'absent' }))}>غایب</Button>
+                              <Button size="sm" variant={currentStatus === 'late' ? 'secondary' : 'outline'} onClick={() => setAttendanceUiStatus(prev => ({ ...prev, [s.id]: prev[s.id] === 'late' ? 'present' : 'late' }))}>تاخیر</Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <input type="checkbox" checked={!!ev.homework_done} onChange={(e) => setEvaluationsMap(prev => ({ ...prev, [s.id]: { ...ev, homework_done: e.target.checked } }))} />
+                          </TableCell>
+                          <TableCell>
+                            <input type="number" min={0} max={100} value={ev.class_score ?? ''} onChange={(e) => {
+                              const val = e.target.value === '' ? null : Number(e.target.value);
+                              setEvaluationsMap(prev => ({ ...prev, [s.id]: { ...ev, class_score: val } }));
+                            }} className="w-20 p-1 border rounded" />
+                          </TableCell>
+                          <TableCell>
+                            <input type="text" value={ev.notes ?? ''} onChange={(e) => setEvaluationsMap(prev => ({ ...prev, [s.id]: { ...ev, notes: e.target.value } }))} className="w-full p-1 border rounded" />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="outline" onClick={() => { setSelectedStudentId(s.id); setEditingDiscipline(null); setDisciplineDesc(''); setSeverity('low'); setDisciplineOpen(true); }}>
+                                {disciplineCount > 0 ? `${disciplineCount}` : '+'}
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
-                    );
-                   })}
-                </TableBody>
-              </Table>
-             }
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
-            <div className="flex items-center justify-between">
-                <div><CardTitle></CardTitle></div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                      <Button disabled={isSubmitting || loadingStudents || loadingAttendance || students.length === 0}>
-                          {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : null}
-                          {isSubmitting ? 'در حال ثبت...' : 'ثبت حضور و غیاب'}
-                      </Button>
-                    </AlertDialogTrigger>
-                  <AlertDialogContent dir="rtl">
-                    <AlertDialogHeader><AlertDialogTitle>آیا مطمئن هستید؟</AlertDialogTitle><AlertDialogDescription>با این کار، سوابق قبلی حضور و غیاب برای این کلاس، تاریخ و ساعت درسی بازنویسی خواهد شد و فقط غایبین و تاخیر ثبت می‌شوند.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>انصراف</AlertDialogCancel><AlertDialogAction onClick={handleAttendanceSubmit}>تایید و ثبت</AlertDialogAction></AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
           </Card>
         )}
 
@@ -580,6 +787,7 @@ const TeacherDashboard = () => {
               </CardContent>
           </Card>
         )}
+        
       </main>
     </div>
   );
