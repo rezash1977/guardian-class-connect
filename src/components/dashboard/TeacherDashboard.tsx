@@ -209,7 +209,7 @@ const TeacherDashboard = () => {
       .select('student_id, status, is_justified')
       .eq('class_subject_id', selectedClassSubjectId)
       .eq('date', formattedDate)
-      .eq('lesson_period', lessonPeriod);
+      .eq('lesson_period', parseInt(lessonPeriod));
 
     if (error) {
         toast.error("خطا در بارگذاری سوابق حضور و غیاب قبلی: " + error.message);
@@ -258,7 +258,7 @@ const TeacherDashboard = () => {
 
 
   const handleAttendanceSubmit = async () => {
-    if (!selectedClassSubjectId || !date || !lessonPeriod || Object.keys(attendanceStatus).length === 0 || !user) {
+    if (!selectedClassSubjectId || !date || !lessonPeriod || Object.keys(attendanceStatus).length === 0 || !user || !selectedClass) {
       toast.error('لطفاً کلاس، تاریخ، ساعت درسی و وضعیت دانش‌آموزان را مشخص کنید و مطمئن شوید وارد شده‌اید.');
       return;
     }
@@ -274,6 +274,7 @@ const TeacherDashboard = () => {
 
     const recordsToUpsert = Object.entries(attendanceStatus).map(([studentId, { status, justified }]) => ({
       student_id: studentId,
+      class_id: selectedClass.id,
       class_subject_id: selectedClassSubjectId,
       status,
       is_justified: status === 'absent' ? justified : null,
