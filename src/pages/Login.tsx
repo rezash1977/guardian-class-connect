@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '../integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,12 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
+    if (!isSupabaseConfigured) {
+      toast.error('تنظیمات Supabase ناقص است. ورود ممکن نیست.');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (!username || !password) {
         toast.error('لطفاً نام کاربری و رمز عبور را وارد کنید');
@@ -40,11 +46,13 @@ const Login = () => {
       if (profileError) {
         console.error('Error fetching profile:', profileError);
         toast.error('خطا در بررسی اطلاعات کاربری: ' + (profileError.message ?? profileError.toString()));
+        setLoading(false);  // Important: reset loading on error
         return;
       }
 
       if (!profile?.email) {
         toast.error('کاربری با این نام کاربری یافت نشد');
+        setLoading(false);  // Important: reset loading on error
         return;
       }
 
@@ -65,14 +73,23 @@ const Login = () => {
         } else {
           toast.error('خطا در ورود: ' + msg);
         }
+        setLoading(false);  // Important: reset loading on error
         return;
       }
 
       if (!data?.user) {
         console.error('Sign in succeeded but no user object returned', data);
         toast.error('خطا در دریافت اطلاعات کاربری پس از ورود');
+        setLoading(false);  // Important: reset loading on error
         return;
       }
+
+      // Add debug log for successful login
+      console.debug('Login successful, user:', { 
+        id: data.user.id,
+        email: data.user.email,
+        hasSession: !!data.session
+      });
 
       toast.success('ورود موفقیت‌آمیز بود');
       navigate('/dashboard');

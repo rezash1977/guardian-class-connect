@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface Profile {
   id: string;
@@ -39,6 +40,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let mounted = true;
+    if (!isSupabaseConfigured) {
+      console.error('Supabase not configured - auth disabled in UI');
+      toast.error('تنظیمات Supabase ناقص است. لطفاً متغیرهای محیطی را بررسی کنید.');
+      setLoading(false);
+      return;
+    }
     // set up auth state listener defensively and handle token refresh failures
     const result = supabase.auth.onAuthStateChange(async (event, session) => {
       try {
@@ -62,6 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
+        console.debug('Auth state change:', { event, session, hasUser: !!session?.user });
         setSession(session ?? null);
         setUser(session?.user ?? null);
 
