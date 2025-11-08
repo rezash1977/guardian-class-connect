@@ -1,133 +1,91 @@
+import { createContext, useContext, useEffect, useState } from 'react';
+import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { Session, User } from '@supabase/supabase-js';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface AuthContextType {
-  session: Session | null;
   user: User | null;
-  signOut: () => Promise<void>;
-  loading: boolean;
+  session: Session | null;
   userRole: string | null;
+  loading: boolean;
+  signOut: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  session: null,
+  userRole: null,
+  loading: true,
+  signOut: async () => {},
+});
 
-interface AuthProviderProps {
-  children: React.ReactNode;
-}
+export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(null);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  // ✅ گرفتن نقش کاربر از جدول user_roles
-  const fetchUserRole = async (userId: string) => {
-    console.log('AuthProvider: Fetching user role for:', userId);
-    try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('AuthProvider: Error fetching user role:', error);
-        setUserRole(null);
-        return;
-      }
-
-      if (data?.role) {
-        console.log('AuthProvider: User role found:', data.role);
-        setUserRole(data.role);
-      } else {
-        console.log('AuthProvider: No role found for this user');
-        setUserRole(null);
-      }
-    } catch (err) {
-      console.error('AuthProvider: Exception while fetching role:', err);
-      setUserRole(null);
-    }
-  };
-
-  // ✅ مقداردهی اولیه و listener برای تغییر وضعیت Auth
   useEffect(() => {
-    let initialized = false;
-
-    const initAuth = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) console.error('AuthProvider: getSession error:', error);
-
-        const currentSession = data?.session ?? null;
-        const currentUser = currentSession?.user ?? null;
-
-        setSession(currentSession);
-        setUser(currentUser);
-
-        if (currentUser) await fetchUserRole(currentUser.id);
-      } catch (err) {
-        console.error('AuthProvider: initAuth error:', err);
-      } finally {
-        initialized = true;
-        setLoading(false); // ✅ همیشه false می‌شود
-      }
-    };
-
-    initAuth();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('AuthProvider: Auth state changed:', event);
         setSession(session);
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-
-        if (currentUser) {
-          await fetchUserRole(currentUser.id);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          setTimeout(async () => {
+            const { data: roleRow } = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+            setUserRole(roleRow?.role ?? null);
+            setLoading(false);
+          }, 0);
         } else {
           setUserRole(null);
+          setLoading(false);
         }
-
-        if (initialized) setLoading(false);
       }
     );
 
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            setUserRole(data?.role ?? null);
+            setLoading(false);
+          });
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {
-    console.log('AuthProvider: Signing out...');
-    setLoading(true);
     await supabase.auth.signOut();
-    setSession(null);
     setUser(null);
+    setSession(null);
     setUserRole(null);
-    setLoading(false);
-  };
-
-  const value = {
-    session,
-    user,
-    signOut,
-    loading,
-    userRole,
+    navigate('/login');
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, session, userRole, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 };
