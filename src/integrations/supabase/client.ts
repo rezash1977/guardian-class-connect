@@ -19,7 +19,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 }
 
 // ✅ ایجاد کلاینت
-export const supabase = createClient(
+export const supabase = createClient<Database>(
   SUPABASE_URL,
   SUPABASE_KEY,
   {
@@ -30,6 +30,3 @@ export const supabase = createClient(
     },
   }
 );
-
-// Export helper flag so UI can detect misconfiguration and show a helpful message
-export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY);
