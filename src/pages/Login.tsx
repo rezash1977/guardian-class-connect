@@ -17,90 +17,92 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const navigate = useNavigate();
 
+  // ---------------------------
+  // ✅ تابع ورود با لاگ و مدیریت خطا
+  // ---------------------------
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    console.clear();
+    console.groupCollapsed('%c🧭 LOGIN DEBUG START', 'color: green; font-weight: bold');
 
     if (!isSupabaseConfigured) {
-      toast.error('تنظیمات Supabase ناقص است. ورود ممکن نیست.');
+      toast.error('تنظیمات Supabase ناقص است.');
+      console.error('❌ Supabase config missing');
       setLoading(false);
       return;
     }
 
     try {
       if (!username || !password) {
-        toast.error('لطفاً نام کاربری و رمز عبور را وارد کنید');
+        toast.error('نام کاربری یا رمز عبور خالی است');
+        console.warn('⚠️ Missing credentials:', { username, password });
         return;
       }
 
-      // First check if user exists in profiles
-      console.debug('Login: fetching profile for username', username);
+      console.log('1️⃣ Fetching profile for username:', username);
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('email')
         .eq('username', username)
         .maybeSingle();
 
-      console.debug('Login: profile response', { profile, profileError });
+      console.log('Profile result:', { profile, profileError });
 
       if (profileError) {
-        console.error('Error fetching profile:', profileError);
-        toast.error('خطا در بررسی اطلاعات کاربری: ' + (profileError.message ?? profileError.toString()));
-        setLoading(false);  // Important: reset loading on error
+        toast.error('خطا در بررسی نام کاربری');
+        console.error('❌ Profile fetch error:', profileError);
+        setLoading(false);
         return;
       }
 
       if (!profile?.email) {
-        toast.error('کاربری با این نام کاربری یافت نشد');
-        setLoading(false);  // Important: reset loading on error
+        toast.error('کاربری با این نام یافت نشد');
+        console.warn('⚠️ No profile found for username:', username);
+        setLoading(false);
         return;
       }
 
-      // Then try to sign in
-      console.debug('Login: attempting signInWithPassword for', profile.email);
+      console.log('2️⃣ Attempting signInWithPassword for email:', profile.email);
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password,
       });
 
-      console.debug('Login: sign-in response', { data, signInError });
+      console.log('SignIn response:', { data, signInError });
 
       if (signInError) {
-        console.error('Sign in error:', signInError);
-        const msg = signInError?.message ?? JSON.stringify(signInError);
-        if (typeof msg === 'string' && msg.includes('Invalid login credentials')) {
-          toast.error('رمز عبور اشتباه است');
-        } else {
-          toast.error('خطا در ورود: ' + msg);
-        }
-        setLoading(false);  // Important: reset loading on error
+        console.error('❌ Sign-in error:', signInError);
+        toast.error('ورود ناموفق: ' + signInError.message);
+        setLoading(false);
         return;
       }
 
-      if (!data?.user) {
-        console.error('Sign in succeeded but no user object returned', data);
-        toast.error('خطا در دریافت اطلاعات کاربری پس از ورود');
-        setLoading(false);  // Important: reset loading on error
-        return;
+      if (!data?.session) {
+        console.warn('⚠️ Sign-in succeeded but no session returned:', data);
+        toast.warning('ورود انجام شد ولی session دریافت نشد');
       }
 
-      // Add debug log for successful login
-      console.debug('Login successful, user:', { 
-        id: data.user.id,
-        email: data.user.email,
-        hasSession: !!data.session
+      console.log('3️⃣ Signed in successfully:', {
+        user: data.user,
+        session: data.session,
       });
 
-      toast.success('ورود موفقیت‌آمیز بود');
+      toast.success('ورود موفقیت‌آمیز بود. در حال انتقال...');
+      await new Promise((r) => setTimeout(r, 500));
       navigate('/dashboard');
-    } catch (error) {
-      console.error('Unexpected error during login:', error);
-      toast.error('خطای غیرمنتظره در ورود');
+    } catch (error: any) {
+      console.error('💥 Unexpected login error:', error);
+      toast.error('خطای غیرمنتظره: ' + error.message);
     } finally {
+      console.groupEnd();
       setLoading(false);
     }
   };
 
+  // ---------------------------
+  // ✅ تابع ثبت‌نام
+  // ---------------------------
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -109,27 +111,27 @@ const Login = () => {
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: {
-            full_name: fullName,
-            username: username,
-            // The role will be set to 'parent' by default in the trigger if not specified
-          },
-        },
+        options: { data: { full_name: fullName, username } },
       });
 
       if (signUpError) {
+        console.error('❌ Signup error:', signUpError);
         toast.error(`خطا در ثبت‌نام: ${signUpError.message}`);
       } else {
-        toast.success('ثبت‌نام موفقیت‌آمیز بود. لطفاً ایمیل خود را برای فعال‌سازی حساب کاربری چک کنید.');
+        console.log('✅ Signup success:', authData);
+        toast.success('ثبت‌نام موفقیت‌آمیز بود. ایمیل خود را بررسی کنید.');
       }
     } catch (error: any) {
-      toast.error(`خطا در ثبت‌نام: ${error.message}`);
+      console.error('💥 Signup exception:', error);
+      toast.error(`خطای غیرمنتظره در ثبت‌نام: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------------------------
+  // ✅ رابط کاربری
+  // ---------------------------
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md shadow-lg">
@@ -140,13 +142,15 @@ const Login = () => {
           <CardTitle className="text-3xl font-bold">سیستم مدیریت هنرستان آل محمد ص</CardTitle>
           <CardDescription>برای ورود به پنل خود، اطلاعات را وارد کنید</CardDescription>
         </CardHeader>
+
         <CardContent>
           <Tabs defaultValue="login" className="w-full" dir="rtl">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">ورود</TabsTrigger>
               <TabsTrigger value="signup">ثبت‌نام</TabsTrigger>
             </TabsList>
-            
+
+            {/* --- ورود --- */}
             <TabsContent value="login">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
@@ -179,6 +183,7 @@ const Login = () => {
               </form>
             </TabsContent>
 
+            {/* --- ثبت‌نام --- */}
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
@@ -243,4 +248,3 @@ const Login = () => {
 };
 
 export default Login;
-

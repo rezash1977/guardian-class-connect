@@ -1,207 +1,133 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
-
-interface Profile {
-  id: string;
-  full_name: string;
-  username: string;
-}
+import { supabase } from '@/integrations/supabase/client';
+import { Session, User } from '@supabase/supabase-js';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 interface AuthContextType {
-  user: User | null;
   session: Session | null;
-  userRole: string | null;
-  profile: Profile | null;
-  loading: boolean;
+  user: User | null;
   signOut: () => Promise<void>;
+  loading: boolean;
+  userRole: string | null;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  session: null,
-  userRole: null,
-  profile: null,
-  loading: true,
-  signOut: async () => {},
-});
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => useContext(AuthContext);
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    let mounted = true;
-    if (!isSupabaseConfigured) {
-      console.error('Supabase not configured - auth disabled in UI');
-      toast.error('تنظیمات Supabase ناقص است. لطفاً متغیرهای محیطی را بررسی کنید.');
-      setLoading(false);
-      return;
-    }
-    // set up auth state listener defensively and handle token refresh failures
-    const result = supabase.auth.onAuthStateChange(async (event, session) => {
-      try {
-        if (!mounted) return;
-        // Handle token refresh failures explicitly
-  if ((event as string) === 'TOKEN_REFRESH_FAILED') {
-          console.warn('Auth event: TOKEN_REFRESH_FAILED — clearing local session and redirecting to login');
-          try {
-            await supabase.auth.signOut();
-          } catch (e) {
-            console.warn('Error during signOut after token refresh failed', e);
-          }
-          if (mounted) {
-            setUser(null);
-            setSession(null);
-            setProfile(null);
-            setUserRole(null);
-            setLoading(false);
-            navigate('/login');
-          }
-          return;
-        }
+  // ✅ گرفتن نقش کاربر از جدول user_roles
+  const fetchUserRole = async (userId: string) => {
+    console.log('AuthProvider: Fetching user role for:', userId);
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-        console.debug('Auth state change:', { event, session, hasUser: !!session?.user });
-        setSession(session ?? null);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          try {
-            const [{ data: profileData }, { data: roleRow }] = await Promise.all([
-              supabase
-                .from('profiles')
-                .select('id, full_name, username')
-                .eq('id', session.user.id)
-                .maybeSingle(),
-              supabase
-                .from('user_roles')
-                .select('role')
-                .eq('user_id', session.user.id)
-                .maybeSingle(),
-            ]);
-
-            if (!mounted) return;
-            setProfile(profileData ?? null);
-            setUserRole(roleRow?.role ?? null);
-          } catch (err) {
-            console.error('Error fetching profile/role on auth change:', err);
-            if (mounted) {
-              setProfile(null);
-              setUserRole(null);
-            }
-          }
-        } else {
-          if (mounted) {
-            setProfile(null);
-            setUserRole(null);
-          }
-        }
-      } catch (err) {
-        console.error('Unhandled error in onAuthStateChange handler:', err);
-      } finally {
-        if (mounted) setLoading(false);
+      if (error) {
+        console.error('AuthProvider: Error fetching user role:', error);
+        setUserRole(null);
+        return;
       }
-    });
 
-    // Immediately check existing session on mount
-    (async () => {
+      if (data?.role) {
+        console.log('AuthProvider: User role found:', data.role);
+        setUserRole(data.role);
+      } else {
+        console.log('AuthProvider: No role found for this user');
+        setUserRole(null);
+      }
+    } catch (err) {
+      console.error('AuthProvider: Exception while fetching role:', err);
+      setUserRole(null);
+    }
+  };
+
+  // ✅ مقداردهی اولیه و listener برای تغییر وضعیت Auth
+  useEffect(() => {
+    let initialized = false;
+
+    const initAuth = async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error('getSession error:', error);
-          // If the error indicates bad refresh token, force sign out and redirect
-          if ((error as any)?.message?.includes?.('Invalid Refresh Token')) {
-            try { await supabase.auth.signOut(); } catch (e) { /* ignore */ }
-            if (mounted) {
-              localStorage.clear();
-              setUser(null);
-              setSession(null);
-              setProfile(null);
-              setUserRole(null);
-              navigate('/login');
-            }
-          }
-          return;
-        }
+        if (error) console.error('AuthProvider: getSession error:', error);
 
-        const session = data?.session ?? null;
-        if (!mounted) return;
-        setSession(session);
-        setUser(session?.user ?? null);
+        const currentSession = data?.session ?? null;
+        const currentUser = currentSession?.user ?? null;
 
-        if (session?.user) {
-          try {
-            const [{ data: profileData }, { data: roleRow }] = await Promise.all([
-              supabase
-                .from('profiles')
-                .select('id, full_name, username')
-                .eq('id', session.user.id)
-                .maybeSingle(),
-              supabase
-                .from('user_roles')
-                .select('role')
-                .eq('user_id', session.user.id)
-                .maybeSingle(),
-            ]);
-            if (!mounted) return;
-            setProfile(profileData ?? null);
-            setUserRole(roleRow?.role ?? null);
-          } catch (err) {
-            console.error('Error loading user profile/role on init:', err);
-          }
-        }
-      } catch (err: any) {
-        console.error('Unexpected error while initializing session:', err);
-        if (err?.message?.includes?.('Invalid Refresh Token')) {
-          try { await supabase.auth.signOut(); } catch (e) { /* ignore */ }
-          if (mounted) {
-            localStorage.clear();
-            setUser(null);
-            setSession(null);
-            setProfile(null);
-            setUserRole(null);
-            navigate('/login');
-          }
-        }
+        setSession(currentSession);
+        setUser(currentUser);
+
+        if (currentUser) await fetchUserRole(currentUser.id);
+      } catch (err) {
+        console.error('AuthProvider: initAuth error:', err);
       } finally {
-        if (mounted) setLoading(false);
+        initialized = true;
+        setLoading(false); // ✅ همیشه false می‌شود
       }
-    })();
+    };
+
+    initAuth();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('AuthProvider: Auth state changed:', event);
+        setSession(session);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+
+        if (currentUser) {
+          await fetchUserRole(currentUser.id);
+        } else {
+          setUserRole(null);
+        }
+
+        if (initialized) setLoading(false);
+      }
+    );
 
     return () => {
-      mounted = false;
-      try {
-        // handle different return shapes for the listener
-        // @ts-ignore
-        const subscription = result?.data?.subscription ?? result?.subscription;
-        if (subscription && typeof subscription.unsubscribe === 'function') {
-          subscription.unsubscribe();
-        }
-      } catch (e) {
-        console.warn('Error during auth listener cleanup', e);
-      }
+      listener?.subscription.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
+    console.log('AuthProvider: Signing out...');
+    setLoading(true);
     await supabase.auth.signOut();
-    setUser(null);
     setSession(null);
+    setUser(null);
     setUserRole(null);
-    navigate('/login');
+    setLoading(false);
+  };
+
+  const value = {
+    session,
+    user,
+    signOut,
+    loading,
+    userRole,
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, userRole, profile, loading, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
