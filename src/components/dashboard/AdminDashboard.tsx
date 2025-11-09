@@ -24,7 +24,7 @@ const AdminDashboard = () => {
 
   // Define background and icon colors for tabs
   const tabStyles = {
-    teachers: { bg: 'bg-blue-100 dark:bg-blue-900', iconColor: 'text-blue-600 dark:text-blue-300' },
+    teachers: { bg: 'bg-orange-100 dark:bg-orange-900', iconColor: 'text-blue-600 dark:text-blue-300' },
     subjects: { bg: 'bg-purple-100 dark:bg-purple-900', iconColor: 'text-purple-600 dark:text-purple-300' },
     classes: { bg: 'bg-green-100 dark:bg-green-900', iconColor: 'text-green-600 dark:text-green-300' },
     students: { bg: 'bg-orange-100 dark:bg-orange-900', iconColor: 'text-orange-600 dark:text-orange-300' },
@@ -59,7 +59,7 @@ const AdminDashboard = () => {
       <main className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6" dir="rtl">
           {/* --- MODIFICATION: Adjusted TabsList styling --- */}
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto p-1 bg-transparent shadow-none gap-2"> {/* Removed bg, added gap */}
+<TabsList className="grid w-full grid-cols-3 sm:grid-cols-7 h-auto p-1 bg-transparent shadow-none gap-2">
             {/* --- MODIFICATION: Wrapped content in styled div --- */}
             <TabsTrigger value="teachers" className="p-0 data-[state=active]:shadow-lg data-[state=active]:ring-2 data-[state=active]:ring-primary rounded-lg focus-visible:ring-offset-0 focus-visible:ring-2 focus-visible:ring-ring"> {/* Reset padding, add active styles */}
               <div className={`flex flex-col sm:flex-row items-center justify-center gap-2 p-3 rounded-md shadow-md w-full h-full ${tabStyles.teachers.bg}`}>
