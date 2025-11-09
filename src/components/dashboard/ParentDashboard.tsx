@@ -9,13 +9,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea'; // Import Textarea for justification
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { LogOut, User, Upload, Eye, Loader2 } from 'lucide-react';
-import { format } from "date-fns-jalali";
-import { safeFormatDate, toPersianDigits } from "@/utils/dateUtils";
+import moment from 'jalali-moment'; // +++ ایمپورت کتابخانه jalali-moment
 
-// Interface definitions reflecting the provided schema
+// +++ تنظیم کلی locale برای فارسی‌سازی اعداد و ماه‌ها در کل کامپوننت +++
+moment.locale('fa');
+
+// --- اینترفیس‌ها ---
 interface Student {
   id: string;
   full_name: string;
@@ -26,9 +28,9 @@ interface AttendanceRecord {
   date: string;
   status: string;
   lesson_period: number;
-  medical_note_url: string | null; // Correct column name
-  is_justified: boolean | null;    // Added column
-  justification: string | null;    // Added column
+  medical_note_url: string | null; 
+  is_justified: boolean | null;    
+  justification: string | null;    
   class_subjects: {
     subjects: {
       name: string;
@@ -55,7 +57,9 @@ interface EvaluationRecordParent {
   classes?: { name: string } | null;
 }
 
+
 const ParentDashboard = () => {
+  // --- State ---
   const { signOut, user } = useAuth();
   const [children, setChildren] = useState<Student[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | undefined>();
@@ -67,13 +71,15 @@ const ParentDashboard = () => {
   const [loadingDiscipline, setLoadingDiscipline] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [justificationText, setJustificationText] = useState(''); // State for justification text
+  const [justificationText, setJustificationText] = useState(''); 
   const [selectedAttendanceId, setSelectedAttendanceId] = useState<string | null>(null);
 
+  // --- Memos ---
   const selectedChild = useMemo(() => {
     return children.find(c => c.id === selectedChildId);
   }, [children, selectedChildId]);
 
+  // --- Effects ---
   useEffect(() => {
     if (user) {
       fetchChildren();
@@ -93,6 +99,7 @@ const ParentDashboard = () => {
     }
   }, [selectedChildId]);
 
+  // --- Data Fetching ---
   const fetchEvaluations = async () => {
     if (!selectedChildId) return;
     try {
@@ -122,7 +129,7 @@ const ParentDashboard = () => {
     } else {
         setChildren(data || []);
         if (data && data.length > 0 && !selectedChildId) {
-          setSelectedChildId(data[0].id); // Select the first child by default
+          setSelectedChildId(data[0].id);
         }
     }
     setLoadingChildren(false);
@@ -131,7 +138,6 @@ const ParentDashboard = () => {
   const fetchAttendance = async () => {
     if (!selectedChildId) return;
     setLoadingAttendance(true);
-    // *** FIX: Corrected SELECT query based on provided schema ***
     const { data, error } = await supabase
       .from('attendance')
       .select('id, date, status, lesson_period, medical_note_url, is_justified, justification, class_subjects(subjects(name))')
@@ -150,7 +156,6 @@ const ParentDashboard = () => {
   };
 
   const fetchDiscipline = async () => {
-    // This function seems correct based on previous contexts, assuming discipline links to classes
     if (!selectedChildId) return;
     setLoadingDiscipline(true);
     const { data, error } = await supabase
@@ -166,6 +171,8 @@ const ParentDashboard = () => {
     }
     setLoadingDiscipline(false);
   };
+  
+  // --- Handlers (توابع بازگردانده شده) ---
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -178,22 +185,22 @@ const ParentDashboard = () => {
   const handleUploadCertificate = async () => {
     if (!selectedAttendanceId || !selectedChildId) return;
     if (!selectedFile && !justificationText.trim()) {
-        toast.error("لطفاً یک فایل انتخاب کنید یا توضیحاتی برای توجیه غیبت بنویسید.");
-        return;
+      toast.error("لطفاً یک فایل انتخاب کنید یا توضیحاتی برای توجیه غیبت بنویسید.");
+      return;
     }
 
     setUploading(true);
     let fileUrl: string | null = null;
     let filePath: string | null = null;
 
-    // --- Upload file if selected ---
-    if (selectedFile) {
+    try {
+      if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${selectedChildId}_${selectedAttendanceId}_${Date.now()}.${fileExt}`;
         filePath = `${selectedChildId}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
-          .from('picapsent') // Ensure this bucket exists and has correct policies
+          .from('picapsent') 
           .upload(filePath, selectedFile);
 
         if (uploadError) {
@@ -203,123 +210,46 @@ const ParentDashboard = () => {
         }
 
         const { data: urlData } = supabase.storage
-            .from('medical-certificates')
-            .getPublicUrl(filePath);
+          .from('picapsent') 
+          .getPublicUrl(filePath);
 
         if (!urlData?.publicUrl) {
-             toast.error("خطا در دریافت آدرس فایل بارگذاری شده.");
-             setUploading(false);
-             return;
+          toast.error("خطا در دریافت آدرس فایل بارگذاری شده.");
+          setUploading(false);
+          return;
         }
-        fileUrl = urlData.publicUrl;
-    }
-    // --- End Upload file ---
-// ✅ نسخه اصلاح‌شده ParentDashboard با باکت picapsent
-// رفع خطا در دریافت لینک عمومی از باکت درست
-
-const handleUploadCertificate = async () => {
-  if (!selectedAttendanceId || !selectedChildId) return;
-  if (!selectedFile && !justificationText.trim()) {
-    toast.error("لطفاً یک فایل انتخاب کنید یا توضیحاتی برای توجیه غیبت بنویسید.");
-    return;
-  }
-
-  setUploading(true);
-  let fileUrl: string | null = null;
-  let filePath: string | null = null;
-
-  try {
-    // --- Upload file if selected ---
-    if (selectedFile) {
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${selectedChildId}_${selectedAttendanceId}_${Date.now()}.${fileExt}`;
-      filePath = `${selectedChildId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('picapsent') // ✅ باکت درست
-        .upload(filePath, selectedFile);
-
-      if (uploadError) {
-        toast.error('خطا در بارگذاری فایل: ' + uploadError.message);
-        setUploading(false);
-        return;
+        fileUrl = urlData.publicUrl; 
       }
 
-      const { data: urlData } = supabase.storage
-        .from('picapsent') // ✅ باکت درست
-        .getPublicUrl(filePath);
-
-      if (!urlData?.publicUrl) {
-        toast.error("خطا در دریافت آدرس فایل بارگذاری شده.");
-        setUploading(false);
-        return;
-      }
-
-      fileUrl = urlData.publicUrl; // ✅ لینک عمومی از باکت درست
-    }
-
-    // --- Update attendance record ---
-    const { error: updateError } = await supabase
-      .from('attendance')
-      .update({
-        medical_note_url: fileUrl,
-        is_justified: true,
-        justification: justificationText.trim() || null
-      })
-      .eq('id', selectedAttendanceId);
-
-    if (updateError) {
-      toast.error('خطا در به‌روزرسانی وضعیت غیبت: ' + updateError.message);
-      if (filePath) {
-        await supabase.storage.from('picapsent').remove([filePath]); // ✅ حذف از باکت درست
-      }
-    } else {
-      toast.success('غیبت با موفقیت توجیه شد.');
-      setSelectedFile(null);
-      setJustificationText('');
-      setSelectedAttendanceId(null);
-      fetchAttendance(); // Refresh attendance data
-    }
-  } catch (error) {
-    console.error('Upload exception:', error);
-    toast.error('خطای غیرمنتظره در بارگذاری فایل');
-  } finally {
-    setUploading(false);
-  }
-};
-
-
-    // --- Update attendance record ---
-    const { error: updateError } = await supabase
-      .from('attendance')
-      .update({
-          medical_note_url: fileUrl, // Use correct column name
-          is_justified: true,        // Set justification flag
-          justification: justificationText.trim() || null // Add justification text
+      const { error: updateError } = await supabase
+        .from('attendance')
+        .update({
+          medical_note_url: fileUrl,
+          is_justified: true,
+          justification: justificationText.trim() || null
         })
-      .eq('id', selectedAttendanceId);
+        .eq('id', selectedAttendanceId);
 
-    if (updateError) {
-      toast.error('خطا در به‌روزرسانی وضعیت غیبت: ' + updateError.message);
-      // Attempt to delete the uploaded file if DB update fails and a file was uploaded
-      if (filePath) {
-        await supabase.storage.from('medical-certificates').remove([filePath]);
+      if (updateError) {
+        toast.error('خطا در به‌روزرسانی وضعیت غیبت: ' + updateError.message);
+        if (filePath) {
+          await supabase.storage.from('picapsent').remove([filePath]); 
+        }
+      } else {
+        toast.success('غیبت با موفقیت توجیه شد.');
+        setSelectedFile(null);
+        setJustificationText('');
+        setSelectedAttendanceId(null);
+        fetchAttendance(); 
       }
-    } else {
-      toast.success('غیبت با موفقیت توجیه شد.');
-      // Reset state on success
-      setSelectedFile(null);
-      setJustificationText('');
-      setSelectedAttendanceId(null);
-      fetchAttendance(); // Refresh attendance data
+    } catch (error) {
+      console.error('Upload exception:', error);
+      toast.error('خطای غیرمنتظره در بارگذاری فایل');
+    } finally {
+      setUploading(false);
     }
-
-    setUploading(false);
-     // Close the dialog manually if needed by controlling its open state
-     // Find the DialogClose button/logic if you want to close it programmatically
   };
-
-  // *** Updated getStatusBadge to consider is_justified ***
+    
   const getStatusBadge = (status: string, isJustified: boolean | null) => {
     if (status === 'absent') {
         return isJustified
@@ -342,17 +272,48 @@ const handleUploadCertificate = async () => {
     }
   };
 
-  // Helper function to reset dialog state
   const resetDialogState = () => {
       setSelectedFile(null);
       setJustificationText('');
       setSelectedAttendanceId(null);
   };
 
+  // --- Formatters (توابع جدید) ---
+
+  // +++ تابع کمکی برای فارسی‌سازی اعداد (رفع خطای num.replace) +++
+  const toPersian = (input: string | number | null | undefined): string => {
+    if (input === null || input === undefined) {
+      return '-';
+    }
+    const str = String(input); // <--- ایمن‌سازی: همیشه به رشته تبدیل کن
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    return str.replace(/[0-9]/g, (w) => {
+      return persianDigits[parseInt(w)];
+    });
+  };
+
+  // +++ تابع کمکی برای فرمت تاریخ با jalali-moment +++
+  const formatJalali = (dateString: string | null | undefined, formatStr: string = 'jYYYY/jMM/jDD') => {
+    if (!dateString) {
+      return '-';
+    }
+    try {
+      const m = moment(dateString.replace(/-/g, '/'));
+      if (!m.isValid()) {
+        return dateString; 
+      }
+      return m.format(formatStr); // فرمت‌دهی با jalali-moment
+    } catch (error) {
+      console.warn("Could not format date:", dateString, error);
+      return dateString;
+    }
+  };
+
+
+  // --- Render ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50 shadow-sm">
-        {/* Header remains largely the same */}
          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center"><User className="w-6 h-6 text-primary-foreground" /></div>
@@ -377,23 +338,22 @@ const handleUploadCertificate = async () => {
            <Card><CardContent className="py-12 text-center text-muted-foreground">لطفاً یک فرزند را انتخاب کنید.</CardContent></Card>
         ) : (
           <>
+            {/* --- کارت حضور و غیاب --- */}
             <Card>
               <CardHeader><CardTitle>حضور و غیاب</CardTitle><CardDescription>وضعیت حضور و غیاب {selectedChild.full_name}</CardDescription></CardHeader>
               <CardContent>
                 {loadingAttendance ? <div className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-primary"/></div> : (
                   <Table>
-                    {/* Added Justification Column */}
                     <TableHeader><TableRow><TableHead className="text-right">تاریخ</TableHead><TableHead className="text-right">ساعت</TableHead><TableHead className="text-right">درس</TableHead><TableHead className="text-right">وضعیت</TableHead><TableHead className="text-right">توجیه / گواهی</TableHead></TableRow></TableHeader>
                     <TableBody>
-                      {attendance.length === 0 ? (<TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">هیچ سابقه‌ای یافت نشد</TableCell></TableRow>) : ( // Adjusted colSpan
+                      {attendance.length === 0 ? (<TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">هیچ سابقه‌ای یافت نشد</TableCell></TableRow>) : (
                         attendance.map((record) => (
                           <TableRow key={record.id}>
-                            <TableCell>{safeFormatDate(record.date, "dd/MM/yy")}</TableCell>
-                            <TableCell>{record.lesson_period}</TableCell>
+                            <TableCell>{formatJalali(record.date, 'jYY/jMM/jDD')}</TableCell>
+                            <TableCell>{toPersian(record.lesson_period)}</TableCell>
                             <TableCell>{record.class_subjects?.subjects?.name || '-'}</TableCell>
                             <TableCell>{getStatusBadge(record.status, record.is_justified)}</TableCell>
                             <TableCell>
-                              {/* Show upload button only if absent and NOT justified */}
                               {record.status === 'absent' && !record.is_justified && (
                                 <Dialog onOpenChange={(open) => { if (!open) resetDialogState(); }}>
                                   <DialogTrigger asChild>
@@ -405,7 +365,7 @@ const handleUploadCertificate = async () => {
                                       <DialogHeader>
                                           <DialogTitle>توجیه غیبت</DialogTitle>
                                           <DialogDescription>
-                                              برای غیبت {selectedChild.full_name} در تاریخ {record.date ? format(new Date(record.date.replace(/-/g, '/')), 'yyyy/MM/dd') : ''}،
+                                              برای غیبت {selectedChild.full_name} در تاریخ {formatJalali(record.date, 'jYYYY/jMM/jDD')}،
                                               توضیحات خود را بنویسید یا فایل گواهی پزشکی را بارگذاری کنید (اختیاری).
                                           </DialogDescription>
                                       </DialogHeader>
@@ -429,11 +389,9 @@ const handleUploadCertificate = async () => {
                                   </DialogContent>
                                 </Dialog>
                               )}
-                              {/* Show justification text if justified */}
                               {record.is_justified && record.justification && (
                                 <span className="text-sm text-muted-foreground italic">{record.justification}</span>
                               )}
-                              {/* Show view button if justified and has URL */}
                               {record.is_justified && record.medical_note_url && (
                                 <Button variant="link" size="sm" asChild className={`p-0 h-auto ${record.justification ? 'ml-2' : ''}`}>
                                   <a href={record.medical_note_url} target="_blank" rel="noopener noreferrer" className="gap-1">
@@ -450,6 +408,8 @@ const handleUploadCertificate = async () => {
                 )}
               </CardContent>
             </Card>
+            
+            {/* --- کارت ارزشیابی --- */}
             <Card>
               <CardHeader><CardTitle>ارزشیابی‌ها</CardTitle><CardDescription>ارزشیابی‌های ثبت شده برای {selectedChild.full_name}</CardDescription></CardHeader>
               <CardContent>
@@ -461,9 +421,13 @@ const handleUploadCertificate = async () => {
                     <TableBody>
                       {evaluations.map(ev => (
                         <TableRow key={ev.id}>
-                          <TableCell>{ev.date}</TableCell>
+                          <TableCell>{formatJalali(ev.date, 'jYY/jMM/jDD')}</TableCell>
                           <TableCell>{ev.homework_done ? 'بله' : 'خیر'}</TableCell>
-                          <TableCell>{ev.class_score ?? '-'}</TableCell>
+                          <TableCell>
+                            {(ev.class_score !== null && ev.class_score !== undefined)
+                              ? toPersian(ev.class_score)
+                              : '-'}
+                          </TableCell>
                           <TableCell>{ev.notes ?? '-'}</TableCell>
                         </TableRow>
                       ))}
@@ -473,7 +437,7 @@ const handleUploadCertificate = async () => {
               </CardContent>
             </Card>
 
-            {/* Discipline Card remains the same */}
+            {/* --- کارت انضباطی --- */}
             <Card>
               <CardHeader><CardTitle>موارد انضباطی</CardTitle><CardDescription>موارد انضباطی ثبت شده برای {selectedChild.full_name}</CardDescription></CardHeader>
               <CardContent>
@@ -484,7 +448,7 @@ const handleUploadCertificate = async () => {
                         {discipline.length === 0 ? (<TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">هیچ مورد انضباطی ثبت نشده است</TableCell></TableRow>) : (
                           discipline.map((record) => (
                             <TableRow key={record.id}>
-                              <TableCell>{format(new Date(record.created_at), 'yyyy/MM/dd')}</TableCell>
+                              <TableCell>{formatJalali(record.created_at, 'jYYYY/jMM/jDD')}</TableCell>
                               <TableCell>{record.classes?.name || '-'}</TableCell>
                               <TableCell>{record.description}</TableCell>
                               <TableCell>{getSeverityBadge(record.severity)}</TableCell>
@@ -504,4 +468,3 @@ const handleUploadCertificate = async () => {
 };
 
 export default ParentDashboard;
-
