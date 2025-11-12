@@ -2,6 +2,7 @@
 
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { z } from 'npm:zod@3.22.4'
 
 // Helper function to create Supabase client
 function getSupabaseAdminClient(): SupabaseClient {
@@ -20,6 +21,59 @@ function getSupabaseAdminClient(): SupabaseClient {
   );
 }
 
+// Input validation schemas
+const userSchema = z.object({
+  email: z.string().trim().email({ message: "Invalid email format" }).max(255, { message: "Email too long" }),
+  username: z.string().trim().min(3, { message: "Username must be at least 3 characters" }).max(50, { message: "Username too long" }).regex(/^[a-zA-Z0-9_]+$/, { message: "Username can only contain letters, numbers, and underscores" }),
+  full_name: z.string().trim().min(1, { message: "Full name is required" }).max(100, { message: "Full name too long" }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters" }).max(128, { message: "Password too long" }),
+  temp_student_name: z.string().optional(),
+});
+
+const requestSchema = z.object({
+  users: z.array(userSchema).min(1, { message: "At least one user required" }).max(50, { message: "Maximum 50 users per request" }),
+  userType: z.enum(['admin', 'teacher', 'parent'], { message: "Invalid user type" }),
+});
+
+// Rate limiting helper
+async function checkRateLimit(supabaseAdmin: SupabaseClient, userId: string): Promise<{ allowed: boolean; message?: string }> {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  
+  // Check attempts in the last 5 minutes
+  const { data: recentAttempts, error } = await supabaseAdmin
+    .from('bulk_signup_attempts')
+    .select('id')
+    .eq('user_id', userId)
+    .gte('created_at', fiveMinutesAgo);
+
+  if (error) {
+    console.error('[Rate Limit] Error checking attempts:', error);
+    // Allow the request if we can't check (fail open, but log)
+    return { allowed: true };
+  }
+
+  const attemptCount = recentAttempts?.length || 0;
+  const maxAttempts = 3; // Max 3 bulk signup requests per 5 minutes
+
+  if (attemptCount >= maxAttempts) {
+    return { 
+      allowed: false, 
+      message: `درخواست‌های بیش از حد. لطفاً ${5} دقیقه صبر کنید و دوباره تلاش کنید.` 
+    };
+  }
+
+  return { allowed: true };
+}
+
+// Log rate limit attempt
+async function logAttempt(supabaseAdmin: SupabaseClient, userId: string, userCount: number) {
+  await supabaseAdmin
+    .from('bulk_signup_attempts')
+    .insert({
+      user_id: userId,
+      user_count: userCount,
+    });
+}
 
 Deno.serve(async (req) => {
   // --- Handle CORS Preflight ---
@@ -44,23 +98,91 @@ Deno.serve(async (req) => {
 
 
   try {
+    // --- Authentication Check ---
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error("[Bulk Signup] Missing Authorization header");
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Unauthorized - Missing authentication token' 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error("[Bulk Signup] Invalid token:", authError);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Unauthorized - Invalid token' 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
+    // --- Admin Role Check ---
+    const { data: roleData } = await supabaseAdmin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .single();
+
+    if (!roleData) {
+      console.error("[Bulk Signup] User is not admin:", user.id);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Forbidden - Admin access required' 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403,
+      });
+    }
+
+    console.log(`[Bulk Signup] Authenticated as admin: ${user.id}`);
+
+    // --- Rate Limiting Check ---
+    const rateLimitResult = await checkRateLimit(supabaseAdmin, user.id);
+    if (!rateLimitResult.allowed) {
+      console.warn(`[Bulk Signup] Rate limit exceeded for user ${user.id}`);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: rateLimitResult.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 429, // Too Many Requests
+      });
+    }
+
     // --- Parse Request Body ---
     console.log("[Bulk Signup] Parsing request body...");
     const body = await req.json();
-    console.log("[Bulk Signup] Received request body:", JSON.stringify(body, null, 2));
-    const { users, userType } = body;
+    
+    // --- Zod Schema Validation ---
+    const validationResult = requestSchema.safeParse(body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
+      console.error("[Bulk Signup] Validation Error:", errors);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Input validation failed',
+        errors 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
 
-    // --- Input Validation ---
-    if (!users || !Array.isArray(users) || !userType) {
-      console.error("[Bulk Signup] Validation Error: 'users' array or 'userType' missing.", body);
-      throw new Error('فیلدهای "users" (آرایه) و "userType" (رشته) الزامی هستند.');
-    }
-    const validUserTypes = ['admin', 'teacher', 'parent'];
-    if (!validUserTypes.includes(userType)) {
-       console.error("[Bulk Signup] Validation Error: Invalid 'userType'. Received:", userType);
-      throw new Error(`مقدار "userType" نامعتبر است (${userType}). باید یکی از ${validUserTypes.join(', ')} باشد.`);
-    }
+    const { users, userType } = validationResult.data;
     console.log(`[Bulk Signup] Input validation passed. User type: ${userType}, Users count: ${users.length}`);
+
+    // --- Log Rate Limit Attempt ---
+    await logAttempt(supabaseAdmin, user.id, users.length);
 
 
     const errors: string[] = [];
@@ -77,18 +199,8 @@ Deno.serve(async (req) => {
 
 
       try {
-        // -- Basic Field Validation for Current User --
-        if (!email || !password || !full_name || !username) {
-          let missingFields = [];
-          if (!email) missingFields.push("ایمیل");
-          if (!password) missingFields.push("رمز عبور");
-          if (!full_name) missingFields.push("نام کامل");
-          if (!username) missingFields.push("نام کاربری");
-          const errorMessage = `ردیف ${rowIndex}: فیلدهای الزامی (${missingFields.join(', ')}) یافت نشد یا خالی هستند.`;
-          console.error(`${logPrefix} Validation Error:`, errorMessage, "Data:", user);
-          throw new Error(errorMessage);
-        }
-        console.log(`${logPrefix} Field validation passed.`);
+        // Field validation is now handled by Zod schema
+        console.log(`${logPrefix} Processing validated user data.`);
 
         // --- Step 1: Create Auth User ---
         console.log(`${logPrefix} Attempting to create auth user...`);
