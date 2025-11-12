@@ -2,7 +2,7 @@
 
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
-import { z } from 'npm:zod@3.22.4'
+import { z } from 'npm:zod@3'
 
 // Helper function to create Supabase client
 function getSupabaseAdminClient(): SupabaseClient {
