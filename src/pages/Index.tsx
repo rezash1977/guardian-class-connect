@@ -7,23 +7,25 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // فقط زمانی که loading تمام شده باشد و در حال ناوبری نباشیم
-    if (loading) return;
+    // Check if we have a hash in the URL (for password reset)
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
+      navigate(`/auth/reset-password${hash}`);
+      return;
+    }
 
-    const timer = setTimeout(() => {
+    if (!loading) {
       if (user) {
-        navigate('/dashboard', { replace: true });
+        navigate('/dashboard');
       } else {
-        navigate('/login', { replace: true });
+        navigate('/login');
       }
-    }, 200); // تأخیر کوچک برای اطمینان از اینکه React Router در موبایل آماده است
-
-    return () => clearTimeout(timer);
+    }
   }, [user, loading, navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-lg text-center animate-pulse">در حال بارگذاری...</div>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="text-xl">در حال بارگذاری...</div>
     </div>
   );
 };
