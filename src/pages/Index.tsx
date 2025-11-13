@@ -15,6 +15,8 @@ const Index = () => {
         navigate('/dashboard', { replace: true });
       } else {
         navigate('/login', { replace: true });
+      } else {
+        navigate('/#', { replace: true });
       }
     }, 200); // تأخیر کوچک برای اطمینان از اینکه React Router در موبایل آماده است
 
