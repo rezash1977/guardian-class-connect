@@ -15,12 +15,7 @@ const Index = () => {
     }
 
     if (!loading) {
-      if (user) {
-        navigate('/dashboard');
-      } else {
-        navigate('/login');
       }
-    }
   }, [user, loading, navigate]);
 
   return (
