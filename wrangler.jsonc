@@ -1,8 +1,15 @@
 {
     "name": "alemohammad",
+    "main" : "dist/_worker.js",
     "compatibility_date": "2025-06-04",
     "assets": {
       "directory": "./dist",
         "pages_build_output_dir": "dist"
+    },
+   
+ "bucket" : "./dist",
+    "entry-point" : "workers-site"
+
     }
-}
+       
+
