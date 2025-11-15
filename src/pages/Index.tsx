@@ -7,20 +7,18 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // بررسی هَش برای بازیابی رمز عبور
+    if (loading) return; // صبر تا session کامل بارگذاری شود
+
     const hash = window.location.hash;
     if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
       navigate(`/auth/reset-password${hash}`, { replace: true });
       return;
     }
 
-    // هدایت کاربر فقط وقتی loading تمام شد
-    if (!loading) {
-      if (user) {
-        navigate('/dashboard', { replace: true }); // هدایت کاربر لاگین شده
-      } else {
-        navigate('/login', { replace: true }); // هدایت کاربر لاگین نشده
-      }
+    if (user) {
+      navigate('/dashboard', { replace: true }); // کاربر لاگین شده → داشبورد
+    } else {
+      navigate('/login', { replace: true }); // کاربر لاگین نشده → لاگین
     }
   }, [user, loading, navigate]);
 
