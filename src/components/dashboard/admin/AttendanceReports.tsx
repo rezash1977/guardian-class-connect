@@ -16,7 +16,6 @@ import { Checkbox } from '@/components/ui/checkbox'; // Added Checkbox
 import * as XLSX from 'xlsx';
 import { format, parse } from "date-fns-jalali";
 import { useSortableData } from '@/hooks/use-sortable-data';
-const [date, setDate] = useState<Date | undefined>(new Date()); // تاریخ امروز به عنوان مقدار پیش‌فرض
 
 // Interface definitions remain the same
 interface AttendanceRecord {
@@ -61,7 +60,7 @@ const AttendanceReports = () => {
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClassId, setFilterClassId] = useState('all');
-  const [date, setDate] = useState<Date | undefined>();
+  const [date, setDate] = useState<Date | undefined>(new Date()); // تاریخ امروز به عنوان مقدار پیش‌فرض
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterJustification, setFilterJustification] = useState<string>('all'); // 'all', 'justified', 'unjustified'
 
@@ -288,7 +287,7 @@ const AttendanceReports = () => {
                     <TableCell>{record.class_subjects?.classes?.name || 'نامشخص'}</TableCell>
                     <TableCell>{record.class_subjects?.subjects?.name || 'نامشخص'}</TableCell>
                     <TableCell>{record.date ? format(parse(record.date, 'yyyy-MM-dd', new Date()), 'yyyy/MM/dd') : 'نامشخص'}</TableCell>
-                    <TableCell>{record.lesson_period}</TableCell>
+* <TableCell>{record.lesson_period}</TableCell>
                     <TableCell>{getStatusBadge(record.status)}</TableCell>
                     <TableCell>{getJustificationText(record)}</TableCell> {/* Use helper function */}
                     <TableCell>{record.profiles?.full_name || 'نامشخص'}</TableCell>
@@ -357,4 +356,3 @@ const AttendanceReports = () => {
 };
 
 export default AttendanceReports;
-
