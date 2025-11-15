@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox'; // Added Checkbox
 import * as XLSX from 'xlsx';
 import { format, parse } from "date-fns-jalali";
 import { useSortableData } from '@/hooks/use-sortable-data';
+const [date, setDate] = useState<Date | undefined>(new Date()); // تاریخ امروز به عنوان مقدار پیش‌فرض
 
 // Interface definitions remain the same
 interface AttendanceRecord {
@@ -243,9 +244,17 @@ const AttendanceReports = () => {
             <Select value={filterJustification} onValueChange={setFilterJustification}><SelectTrigger className="w-full sm:w-[130px]"><SelectValue placeholder="فیلتر توجیه" /></SelectTrigger><SelectContent><SelectItem value="all">همه غیبت‌ها</SelectItem><SelectItem value="justified">موجه</SelectItem><SelectItem value="unjustified">غیر موجه</SelectItem></SelectContent></Select>
             {/* Date Filter */}
              <Popover>
-                <PopoverTrigger asChild><Button variant={"outline"} className="w-full sm:w-auto justify-start text-right font-normal"><CalendarIcon className="ml-2 h-4 w-4" />{date ? format(date, "PPP") : <span>انتخاب تاریخ</span>}</Button></PopoverTrigger>
-                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} /></PopoverContent>
-            </Popover>
+    <PopoverTrigger asChild>
+        <Button variant={"outline"} className="w-full sm:w-auto justify-start text-right font-normal">
+            <CalendarIcon className="ml-2 h-4 w-4" />
+            {date ? format(date, "PPP") : <span>انتخاب تاریخ</span>}
+        </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-auto p-0">
+        <Calendar mode="single" selected={date} onSelect={setDate} />
+    </PopoverContent>
+</Popover>
+
             {/* Clear Filters Button */}
              <Button variant="outline" onClick={() => { setSearchTerm(''); setFilterClassId('all'); setDate(undefined); setFilterStatus('all'); setFilterJustification('all'); }}>پاک کردن</Button>
               {/* Export Button */}
