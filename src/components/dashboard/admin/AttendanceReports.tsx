@@ -17,6 +17,7 @@ import * as XLSX from 'xlsx';
 import { format } from "date-fns-jalali";
 import { useSortableData } from '@/hooks/use-sortable-data';
 
+
 // Interfaces --------------------------------------------------------------
 
 interface AttendanceRecord {
@@ -54,6 +55,7 @@ const justificationTranslations: Record<string, string> = {
   na: '-'
 };
 
+
 // Component --------------------------------------------------------------
 
 const AttendanceReports = () => {
@@ -65,7 +67,7 @@ const AttendanceReports = () => {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterJustification, setFilterJustification] = useState('all');
-  
+
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [newStatus, setNewStatus] = useState<AttendanceStatus>('present');
@@ -129,8 +131,8 @@ const AttendanceReports = () => {
         record.class_subjects?.classes?.id === filterClassId;
 
       const recordDateObj = new Date(record.date);
-      const filterDateStr = date ? format(date, "yyyy-MM-dd") : null;
-      const recordDateStr = format(recordDateObj, "yyyy-MM-dd");
+      const filterDateStr = date ? format(date, "yyyy/MM/dd") : null;
+      const recordDateStr = format(recordDateObj, "yyyy/MM/dd");
 
       const dateMatch = !date || recordDateStr === filterDateStr;
 
@@ -147,6 +149,7 @@ const AttendanceReports = () => {
       return studentMatch && classMatch && dateMatch && statusMatch && justificationMatch;
     });
   }, [sortedItems, searchTerm, filterClassId, date, filterStatus, filterJustification]);
+
 
   // Helpers ---------------------------------------------------------------
 
@@ -224,7 +227,7 @@ const AttendanceReports = () => {
       fetchRecords();
       setEditDialogOpen(false);
     }
-    
+
     setIsUpdating(false);
   };
 
@@ -233,8 +236,8 @@ const AttendanceReports = () => {
       !sortConfig || sortConfig.key !== sortKey
         ? <ArrowUpDown className="mr-2 h-4 w-4 opacity-50" />
         : sortConfig.direction === 'ascending'
-        ? <ArrowUp className="mr-2 h-4 w-4" />
-        : <ArrowDown className="mr-2 h-4 w-4" />;
+          ? <ArrowUp className="mr-2 h-4 w-4" />
+          : <ArrowDown className="mr-2 h-4 w-4" />;
 
     return (
       <Button variant="ghost" onClick={() => requestSort(sortKey)}>
@@ -242,6 +245,7 @@ const AttendanceReports = () => {
       </Button>
     );
   };
+
 
   // Render ----------------------------------------------------------------
 
@@ -253,7 +257,7 @@ const AttendanceReports = () => {
 
         {/* Filters ------------------------------------------------------- */}
         <div className="flex flex-wrap gap-2 pt-4">
-          
+
           {/* Search */}
           <div className="relative flex-grow min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50" />
@@ -311,13 +315,16 @@ const AttendanceReports = () => {
           </Popover>
 
           {/* Clear */}
-          <Button variant="outline" onClick={() => { 
-            setSearchTerm('');
-            setFilterClassId('all');
-            setFilterStatus('all');
-            setFilterJustification('all');
-            setDate(undefined);
-          }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSearchTerm('');
+              setFilterClassId('all');
+              setFilterStatus('all');
+              setFilterJustification('all');
+              setDate(undefined);
+            }}
+          >
             پاک کردن
           </Button>
 
@@ -405,7 +412,6 @@ const AttendanceReports = () => {
               </Select>
             </div>
 
-            {/* Justification only if absent */}
             {newStatus === 'absent' && (
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -426,6 +432,7 @@ const AttendanceReports = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </Card>
   );
 };
