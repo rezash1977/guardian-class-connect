@@ -7,15 +7,13 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if we have a hash in the URL (for password reset)
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
-      navigate(`/auth/reset-password${hash}`);
-      return;
-    }
-
     if (!loading) {
+      if (user) {
+        navigate('/dashboard');
+      } else {
+        navigate('/login');
       }
+    }
   }, [user, loading, navigate]);
 
   return (
